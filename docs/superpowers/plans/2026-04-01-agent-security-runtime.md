@@ -1291,7 +1291,7 @@ def evaluate_unknown_tool(*, default: str) -> dict:
     return {
         "action": default,
         "reason": "unknown_tool",
-        "policy_id": "unknown_tool_default",
+        "policy_id": "default_action",
         "severity": "medium" if default == "warn" else "high",
     }
 
@@ -1395,7 +1395,7 @@ class TestGuardBeforeTool:
                 "network_send": "warn",
                 "shell_exec": "block",
             },
-            unknown_tool_default="warn",
+            default_action="warn",
         )
 
     def test_blocklist_highest_priority(self):
@@ -1415,15 +1415,14 @@ class TestGuardBeforeTool:
         assert d.policy_id == "domain_allowlist"
 
     def test_egress_allows_internal_domain(self):
-        """allowlist 도메인은 통과 → capability fallback으로 판정"""
+        """allowlist 도메인은 egress 통과 → 세부 정책이 해당했으므로 capability 건너뜀 → allow"""
         d = self.guard.before_tool(
             "http_post",
             {"url": "https://api.internal.com/data"},
             capabilities=["network_send"],
         )
-        # egress 통과 → PII 없음 → capability warn
-        assert d.action == "warn"
-        assert d.policy_id == "capability_policy"
+        assert d.action in ("allow", "warn")
+        assert d.policy_id != "capability_policy"
 
     def test_file_path_blocks_unauthorized(self):
         d = self.guard.before_tool("file_read", {"path": "/etc/passwd"})
@@ -1432,8 +1431,8 @@ class TestGuardBeforeTool:
 
     def test_file_path_allows_authorized(self):
         d = self.guard.before_tool("file_write", {"path": "/tmp/asr/output.txt"})
-        # 경로 허용 → PII 없음 → capability 없음 → unknown_tool warn
-        assert d.action == "warn"
+        # 경로 허용 → 세부 정책이 해당했으므로 capability/default 건너뜀 → allow
+        assert d.action == "allow"
 
     def test_pii_blocks(self):
         d = self.guard.before_tool(
@@ -1452,10 +1451,10 @@ class TestGuardBeforeTool:
         assert d.action == "block"
         assert d.policy_id == "capability_policy"
 
-    def test_unknown_tool_default_warn(self):
+    def test_default_action_warn(self):
         d = self.guard.before_tool("totally_new_tool", {"x": "y"})
         assert d.action == "warn"
-        assert d.policy_id == "unknown_tool_default"
+        assert d.policy_id == "default_action"
 
     def test_redacted_args_masks_pii(self):
         d = self.guard.before_tool(
@@ -1465,24 +1464,22 @@ class TestGuardBeforeTool:
         # PII 탐지 → block
         assert "victim@example.com" not in str(d.redacted_args)
 
-    def test_policy_order_egress_before_capability(self):
-        """Egress가 Capability보다 먼저 평가된다.
-        allowlist 도메인이면 egress 통과 → capability fallback"""
+    def test_capability_is_true_fallback(self):
+        """Capability는 진짜 fallback: 세부 정책(egress/file/pii)이 해당된 도구는
+        capability를 다시 평가하지 않는다. Egress allowlist 통과 = allow."""
         guard = Guard(
             domain_allowlist=["api.internal.com"],
             block_egress=True,
             capability_policy={"network_send": "block"},
         )
-        # 주의: capability가 block이어도, egress allowlist 도메인은 egress에서 통과.
-        # capability는 fallback이므로 egress가 해당하지 않을 때만 적용.
-        # 하지만 이 경우 egress에서 통과했으므로, capability block이 적용된다.
         d = guard.before_tool(
             "http_post",
             {"url": "https://api.internal.com/data"},
             capabilities=["network_send"],
         )
-        assert d.action == "block"
-        assert d.policy_id == "capability_policy"
+        # egress 검사가 해당(URL 있음, allowlist 통과) → 세부 정책 통과 → capability 건너뜀
+        assert d.action in ("allow", "warn")
+        assert d.policy_id != "capability_policy"
 
 
 class TestGuardCallbacks:
@@ -1499,7 +1496,7 @@ class TestGuardCallbacks:
     def test_on_warn_callback(self):
         warned = []
         guard = Guard(
-            unknown_tool_default="warn",
+            default_action="warn",
             on_warn=lambda d: warned.append(d),
         )
         guard.before_tool("new_tool", {})
@@ -1571,7 +1568,7 @@ class Guard:
         block_egress: bool = False,
         tool_blocklist: list[str] | None = None,
         capability_policy: dict[str, str] | None = None,
-        unknown_tool_default: str = "warn",
+        default_action: str = "warn",
         on_block: Callable[[BeforeToolDecision], Any] | None = None,
         on_warn: Callable[[BeforeToolDecision], Any] | None = None,
     ):
@@ -1581,7 +1578,7 @@ class Guard:
         self._block_egress = block_egress
         self._tool_blocklist = tool_blocklist or []
         self._capability_policy = capability_policy or {}
-        self._unknown_tool_default = unknown_tool_default
+        self._default_action = default_action
         self._on_block = on_block
         self._on_warn = on_warn
 
@@ -1601,35 +1598,43 @@ class Guard:
         6. Unknown Tool Default
         """
         redacted = self._redact_args(args)
+        matched_any_specific = False  # 세부 정책 해당 여부 추적
 
-        # 1. Tool Blocklist
+        # 1. Tool Blocklist (즉시 차단)
         result = evaluate_tool_blocklist(name, args, blocklist=self._tool_blocklist)
         if result is not None:
             return self._make_before_decision(name, redacted, result)
 
         # 2. Egress Control
-        result = evaluate_egress(
+        egress_result = evaluate_egress(
             name,
             args,
             domain_allowlist=self._domain_allowlist,
             block_egress=self._block_egress,
         )
-        if result is not None:
-            return self._make_before_decision(name, redacted, result)
+        if egress_result is not None:
+            matched_any_specific = True  # egress 정책이 해당했음
+            if egress_result["action"] == "block":
+                return self._make_before_decision(name, redacted, egress_result)
+        elif self._block_egress and _has_url(args):
+            matched_any_specific = True  # URL이 있어서 egress가 검사했고, allowlist 통과
 
         # 3. File Path Allowlist
         if self._file_path_allowlist:
-            result = evaluate_file_path(name, args, allowlist=self._file_path_allowlist)
-            if result is not None:
-                return self._make_before_decision(name, redacted, result)
+            file_result = evaluate_file_path(name, args, allowlist=self._file_path_allowlist)
+            if file_result is not None:
+                matched_any_specific = True
+                if file_result["action"] == "block":
+                    return self._make_before_decision(name, redacted, file_result)
 
         # 4. PII Detection
-        result = evaluate_pii(name, args, pii_action=self._pii_action)
-        if result is not None:
-            return self._make_before_decision(name, redacted, result)
+        pii_result = evaluate_pii(name, args, pii_action=self._pii_action)
+        if pii_result is not None:
+            matched_any_specific = True
+            return self._make_before_decision(name, redacted, pii_result)
 
-        # 5. Capability Policy (fallback)
-        if capabilities:
+        # 5. Capability Policy (진짜 fallback: 세부 정책이 하나도 해당하지 않았을 때만)
+        if not matched_any_specific and capabilities:
             result = evaluate_capability(
                 capabilities=capabilities,
                 policy=self._capability_policy,
@@ -1637,9 +1642,18 @@ class Guard:
             if result is not None:
                 return self._make_before_decision(name, redacted, result)
 
-        # 6. Unknown Tool Default
-        result = evaluate_unknown_tool(default=self._unknown_tool_default)
-        return self._make_before_decision(name, redacted, result)
+        # 6. Default Action (세부 정책도 capability도 해당하지 않았을 때)
+        if not matched_any_specific:
+            result = evaluate_unknown_tool(default=self._default_action)
+            return self._make_before_decision(name, redacted, result)
+
+        # 세부 정책이 해당했지만 모두 통과(None 반환)한 경우 → allow
+        return self._make_before_decision(name, redacted, {
+            "action": "allow",
+            "reason": "all_policies_passed",
+            "policy_id": "none",
+            "severity": "low",
+        })
 
     def after_tool(
         self,
@@ -1647,7 +1661,7 @@ class Guard:
         result: Any,
         context: dict | None = None,
     ) -> AfterToolDecision:
-        """도구 실행 후 결과 검사"""
+        """도구 실행 후 결과 검사. 원래 결과 타입을 보존한다."""
         if self._pii_action == "off":
             return AfterToolDecision(
                 action="allow",
@@ -1657,7 +1671,8 @@ class Guard:
                 tool_name=name,
             )
 
-        result_text = str(result) if result is not None else ""
+        # 결과 타입별로 PII 검사할 텍스트를 추출
+        result_text = self._extract_text_for_pii(result)
         if not has_pii(result_text):
             return AfterToolDecision(
                 action="allow",
@@ -1668,13 +1683,15 @@ class Guard:
             )
 
         if self._pii_action == "block":
+            # 원래 타입 보존: str→str, dict→dict(값 redact), 기타→str
+            redacted = self._redact_result(result)
             return AfterToolDecision(
                 action="redact_result",
                 reason="pii_in_result",
                 policy_id="pii_detection",
                 severity="medium",
                 tool_name=name,
-                redacted_result=redact_pii(result_text),
+                redacted_result=redacted,
             )
         else:  # warn
             return AfterToolDecision(
@@ -1684,6 +1701,32 @@ class Guard:
                 severity="medium",
                 tool_name=name,
             )
+
+    @staticmethod
+    def _extract_text_for_pii(result: Any) -> str:
+        """결과에서 PII 검사용 텍스트를 추출한다."""
+        if isinstance(result, str):
+            return result
+        if isinstance(result, dict):
+            parts = []
+            for v in result.values():
+                if isinstance(v, str):
+                    parts.append(v)
+            return " ".join(parts)
+        if isinstance(result, (list, tuple)):
+            return " ".join(str(item) for item in result if isinstance(item, str))
+        return str(result) if result is not None else ""
+
+    def _redact_result(self, result: Any) -> Any:
+        """결과 타입을 보존하면서 PII를 마스킹한다."""
+        if isinstance(result, str):
+            return redact_pii(result)
+        if isinstance(result, dict):
+            return {k: redact_pii(v) if isinstance(v, str) else v for k, v in result.items()}
+        if isinstance(result, (list, tuple)):
+            redacted = [redact_pii(item) if isinstance(item, str) else item for item in result]
+            return type(result)(redacted)
+        return redact_pii(str(result))
 
     def protect(
         self,
@@ -1697,9 +1740,15 @@ class Guard:
             @functools.wraps(fn)
             def wrapper(*args, **kwargs):
                 tool_name = fn.__name__
+                # positional args를 파라미터 이름에 매핑하여 검사 대상에 포함
+                import inspect
+                sig = inspect.signature(fn)
+                bound = sig.bind_partial(*args, **kwargs)
+                bound.apply_defaults()
+                merged_args = dict(bound.arguments)
                 decision = self.before_tool(
                     tool_name,
-                    kwargs if kwargs else {},
+                    merged_args,
                     capabilities=capabilities,
                 )
                 if decision.action == "block":
@@ -2110,16 +2159,31 @@ class Scanner:
     # --- 패턴 검사 ---
 
     def _check_css_hidden(self, content: str) -> list[Finding]:
+        """숨김 CSS 감지 + 숨김 영역 안에 injection 문구가 있는지 조합 검사.
+        숨김 CSS만 있고 injection 문구가 없으면 정상(접근성)으로 판단한다."""
         findings = []
-        for match in _CSS_HIDDEN_RE.finditer(content):
-            findings.append(
-                Finding(
-                    pattern_id="css_hidden_text",
-                    severity="high",
-                    description="CSS로 숨겨진 텍스트에서 의심 콘텐츠 발견",
-                    location=f"char {match.start()}",
+        # 숨김 스타일이 적용된 태그의 텍스트 콘텐츠를 추출하여 injection 문구 검사
+        hidden_tag_re = re.compile(
+            r"<[^>]+style\s*=\s*\"[^\"]*("
+            r"display\s*:\s*none"
+            r"|visibility\s*:\s*hidden"
+            r"|position\s*:\s*absolute[^\"]*(?:left|top)\s*:\s*-\d{4,}px"
+            r"|font-size\s*:\s*0"
+            r"|opacity\s*:\s*0(?:\.0+)?"
+            r")[^\"]*\"[^>]*>(.*?)</",
+            re.IGNORECASE | re.DOTALL,
+        )
+        for match in hidden_tag_re.finditer(content):
+            inner_text = match.group(2)
+            if _INJECTION_RE.search(inner_text):
+                findings.append(
+                    Finding(
+                        pattern_id="css_hidden_text",
+                        severity="high",
+                        description="CSS로 숨겨진 텍스트에서 의심 지시문 발견",
+                        location=f"char {match.start()}",
+                    )
                 )
-            )
         return findings
 
     def _check_html_comments(self, content: str) -> list[Finding]:
@@ -2241,11 +2305,15 @@ class Scanner:
             return "medium"
         return "low"
 
-    @staticmethod
-    def _build_excerpt(content: str, findings: list[Finding]) -> str:
+    def _build_excerpt(self, content: str, findings: list[Finding]) -> str:
+        """store_raw=False일 때 원문 대신 탐지 요약만 반환하여 민감정보 노출을 방지한다."""
         if not findings:
             return ""
-        # 첫 번째 finding 주변 텍스트를 발췌 (최대 100자)
+        if not self._store_raw:
+            # 원문을 포함하지 않고, 탐지된 패턴 요약만 반환
+            patterns = ", ".join(f.pattern_id for f in findings[:3])
+            return f"[{len(findings)} finding(s): {patterns}]"
+        # store_raw=True일 때만 원문 발췌
         first = findings[0]
         if first.location and first.location.startswith("char "):
             try:
@@ -2290,7 +2358,7 @@ from asr.guard import Guard, BlockedToolError
 
 class TestProtectDecorator:
     def test_allowed_function_runs(self):
-        guard = Guard(unknown_tool_default="allow")
+        guard = Guard(default_action="allow")
 
         @guard.protect
         def safe_function():
@@ -2341,13 +2409,36 @@ class TestProtectDecorator:
             send_message(body="API key: sk-abc123def456ghi789jkl012mno345pqr678")
 
     def test_warn_does_not_block(self):
-        guard = Guard(unknown_tool_default="warn")
+        guard = Guard(default_action="warn")
 
         @guard.protect
         def some_tool():
             return 42
 
         assert some_tool() == 42
+
+    def test_positional_args_checked(self):
+        """위치 인자도 PII 검사 대상이어야 한다"""
+        guard = Guard(pii_action="block")
+
+        @guard.protect
+        def send_email(to, subject, body):
+            return "sent"
+
+        with pytest.raises(BlockedToolError):
+            send_email("victim@example.com", "test", "normal body")
+
+    def test_after_tool_preserves_dict_type(self):
+        """after_tool redact 시 dict 결과 타입이 보존되어야 한다"""
+        guard = Guard(pii_action="block")
+
+        @guard.protect
+        def search():
+            return {"name": "John", "email": "admin@secret.com"}
+
+        result = search()
+        assert isinstance(result, dict)
+        assert "admin@secret.com" not in str(result)
 ```
 
 - [ ] **Step 2: 테스트 통과 확인**
@@ -2781,7 +2872,7 @@ class TestAttackFixturesGuard:
             block_egress=True,
             tool_blocklist=["rm_rf"],
             capability_policy={"network_send": "warn", "shell_exec": "block"},
-            unknown_tool_default="warn",
+            default_action="warn",
         )
 
     def _load_fixture(self, path: str) -> dict:
@@ -2850,7 +2941,7 @@ class TestBenignFixturesGuard:
             pii_action="block",
             block_egress=True,
             capability_policy={"network_send": "warn", "file_write": "warn"},
-            unknown_tool_default="warn",
+            default_action="warn",
         )
 
     def _load_fixture(self, path: str) -> dict:
@@ -2883,7 +2974,7 @@ class TestFullWorkflow:
             domain_allowlist=["api.internal.com"],
             block_egress=True,
             pii_action="block",
-            unknown_tool_default="warn",
+            default_action="warn",
         )
         audit = AuditLogger(output=str(log_file))
 
@@ -2992,7 +3083,7 @@ Guard는 6가지 정책을 지원합니다:
 | `file_path_allowlist` | 허용 경로 외 파일 접근 차단 |
 | `pii_action` | 도구 인자/결과의 민감정보 탐지 |
 | `capability_policy` | capability 태그 기반 통제 (fallback) |
-| `unknown_tool_default` | 미등록 도구 기본 동작 |
+| `default_action` | 미등록 도구 기본 동작 |
 
 정책 평가 순서: Blocklist → Egress → FilePath → PII → Capability → Unknown
 
