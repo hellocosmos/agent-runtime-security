@@ -1,0 +1,8 @@
+{
+  "tool_name": "file_write",
+  "args": {
+    "path": "/tmp/asr/output/report.txt",
+    "content": "Analysis complete. No issues found."
+  },
+  "capabilities": ["file_write"]
+}

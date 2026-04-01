@@ -1,0 +1,8 @@
+{
+  "tool_name": "http_post",
+  "args": {
+    "url": "https://api.internal.com/v2/search",
+    "body": "{\"query\": \"quarterly report 2026\"}"
+  },
+  "capabilities": ["network_send"]
+}

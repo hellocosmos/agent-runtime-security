@@ -1,0 +1,5 @@
+The following is base64-encoded PNG image data for the company logo:
+
+iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==
+
+Please render this image in the report header.
