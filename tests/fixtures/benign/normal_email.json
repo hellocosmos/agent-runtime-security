@@ -1,0 +1,9 @@
+{
+  "tool_name": "send_email",
+  "args": {
+    "to": "team-lead",
+    "subject": "Weekly Report",
+    "body": "This week we completed the security review. All tests passing. Next steps: deploy to staging."
+  },
+  "capabilities": ["network_send"]
+}
