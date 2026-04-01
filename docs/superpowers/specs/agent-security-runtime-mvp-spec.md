@@ -721,3 +721,83 @@ guard = Guard(
 - **패키징:** pyproject.toml (PEP 621)
 - **의존성:** 최소화 (re, json, dataclasses, logging, uuid, datetime 등 표준 라이브러리 우선)
 - **선택적 의존성:** PDF 텍스트 추출 시 `pymupdf` 또는 `pdfplumber`
+
+---
+
+## 16. 엔터프라이즈 상용화 평가 (v0.1 기준)
+
+### 평가 기준
+
+- **충족:** 엔터프라이즈 PoC/파일럿에 바로 사용 가능
+- **부분 충족:** 기능은 있으나 운영/정밀도/통합 보강 필요
+- **미충족:** 아직 범위 밖
+
+### 항목별 평가
+
+| # | 항목 | 상태 | 점수 | 비고 |
+|---|------|------|:----:|------|
+| 1 | Python SDK 패키징 | **충족** | 1.0 | pip install, 133 tests, pyproject.toml |
+| 2 | Tool-call 인터셉트 | 부분 충족 | 0.6 | generic decorator 있음, MCP/프레임워크 어댑터 없음 |
+| 3 | Egress 통제 | 부분 충족 | 0.5 | URL 도메인 통제 + 이메일 수신자 warn, 비URL 목적지는 capability 의존 |
+| 4 | 파일 경로 통제 | 부분 충족 | 0.6 | allowlist + pathlib 정규화, read/write 분리 없음 |
+| 5 | PII 탐지 | 부분 충족 | 0.5 | regex 5패턴, recipient 면제, 지역 특화 없음 |
+| 6 | PII 결과 마스킹 | 부분 충족 | 0.7 | 재귀적 타입 보존 마스킹 구현됨 (str/dict/list) |
+| 7 | Prompt injection 스캐너 | 부분 충족 | 0.3 | regex 1차 필터. 교묘한 공격/다국어 우회 못 잡음. **ML 교체 필요** |
+| 8 | 숨은 HTML/CSS 탐지 | 부분 충족 | 0.5 | CSS hidden + injection 조합, single/double quote. 변형 공격 제한적 |
+| 9 | Audit / Forensics | **충족** | 1.0 | JSONL, trace_id, 4개 이벤트 타입 분리, store_raw 보호 |
+| 10 | 증빙/추적성 | 부분 충족 | 0.6 | 로컬 trace 가능, 중앙 수집/리플레이/검색 없음 |
+| 11 | 운영 모드 (shadow/warn/block) | 부분 충족 | 0.5 | allow/warn/block/redact 있음, shadow mode는 스펙만 (미구현) |
+| 12 | 테스트/fixture 검증 | **충족** | 1.0 | 공격 11개 + 정상 8개 fixture, 133 tests |
+| 13 | 프레임워크 통합 | 미충족 | 0.0 | LangGraph/OpenAI Agents/MCP 어댑터 없음 |
+| 14 | 중앙 정책 관리 | 미충족 | 0.0 | UI, 정책 버전관리, org/team 단위 배포 없음 |
+| 15 | 엔터프라이즈 운영 | 미충족 | 0.0 | SIEM, RBAC, multi-tenant, dashboard, compliance 없음 |
+
+### 총평
+
+| 구분 | 개수 |
+|------|:----:|
+| 충족 | 3/15 |
+| 부분 충족 | 8/15 |
+| 미충족 | 4/15 |
+
+**현재 수준: 기술 PoC / 디자인 파트너 파일럿 가능. 엔터프라이즈 GA는 아직 아님.**
+
+### 솔루션 범위 요약
+
+| 구분 | 내용 |
+|------|------|
+| **지금 하는 일** | Python agent runtime 안에서 입력 스캔, tool-call 정책 집행, 로그 기록 |
+| **잘하는 영역** | 내부 권한 있는 agent의 행동 통제, 기본 egress/file/PII guard, 사고 추적 |
+| **약한 영역** | 고도화된 injection 탐지, 멀티 프레임워크 통합, 중앙 운영 |
+| **아닌 것** | 엔터프라이즈 전체 AI 보안 플랫폼, SaaS control plane, 조직 단위 governance |
+| **현실적 포지션** | **Agent Tool-Use Policy Engine + Audit SDK** |
+| **적합한 고객 단계** | 디자인 파트너 1~3곳, 고위험 내부 agent 파일럿 |
+
+### 상용화 단계별 로드맵
+
+```
+현재 (v0.1)                Phase 1.5                  Enterprise GA
+────────────────        ─────────────────         ─────────────────
+Python SDK               MCP 프록시 어댑터            SaaS / Appliance
+generic decorator         shadow mode 구현            대시보드 + RBAC
+로컬 JSONL 로그            YAML 정책 파일              SIEM 연동
+regex scanner             자동 scanner 연동           ML scanner / 외부 연동
+133 tests                 프레임워크 어댑터 1개         multi-tenant
+                                                    compliance reporting
+
+✅ 기술 PoC 완료     →   디자인 파트너 파일럿   →    GA 판매
+```
+
+### 파일럿 판매 가능한 최소 기능 세트 (Phase 1.5 완료 시)
+
+Phase 1.5까지 완료하면 다음이 가능:
+
+1. **MCP 프록시로 기존 에이전트에 무침투 연동** — 코드 수정 없이 MCP 서버 앞에 프록시 배치
+2. **Shadow mode로 2주 관찰** — 차단 없이 모든 도구 호출/판정을 로그에 기록
+3. **정책 튜닝 후 warn → enforce 전환** — 실제 차단 적용
+4. **감사 로그로 ROI 입증** — "이런 위험 행동이 N건 있었고, M건을 차단했다"
+
+**첫 파일럿 ICP 추천:**
+- 사내 코딩 에이전트 운영팀 (MCP 도구가 많고, 파일/셸 접근이 위험)
+- 고객지원 에이전트 운영팀 (이메일 발송/DB 조회 권한이 있어 데이터 유출 위험)
+- 금융/헬스케어/공공 IT팀 (감사/승인 흐름이 규제 요구사항)
