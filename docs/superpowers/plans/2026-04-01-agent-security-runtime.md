@@ -3169,3 +3169,90 @@ git tag v0.1.0
 - **Placeholder scan:** TBD/TODO 없음 확인
 - **Type consistency:** ScanResult, Finding, BeforeToolDecision, AfterToolDecision 일관성 확인
 - **메서드명 일관성:** scan(), before_tool(), after_tool(), protect(), log_scan(), log_guard(), log_error() 전체 일치
+
+---
+
+## v0.1 구현 완료 후 회고
+
+### 구현 중 발견/수정된 설계 변경
+
+| 원래 설계 | 수정된 설계 | 이유 |
+|-----------|-----------|------|
+| `unknown_tool_default` | `default_action` | tool registry가 없어 known/unknown 구분 무의미 |
+| Capability가 Egress 뒤에 항상 평가 | `matched_any_specific` 추적으로 진짜 fallback | Egress 통과 도구가 capability에서 재차단되는 충돌 해소 |
+| CSS hidden만으로 탐지 | CSS hidden + injection 문구 조합 | 접근성 skip link 오탐 방지 |
+| `str(result)` 로 PII 검사 | 재귀적 타입 보존 마스킹 | dict/list 결과 타입 파괴 방지 |
+| kwargs만 검사 | `inspect.signature` + `bind_partial` | positional args 검사 우회 방지 |
+| `startswith()` 로 경로 검사 | `pathlib.resolve()` + `relative_to()` | 경로 순회/접두사 충돌 우회 방지 |
+| Recipient 필드도 PII 스캔 | `_PII_EXEMPT_KEYS` 면제 | 정상 이메일 수신자가 PII로 차단되는 문제 |
+| URL만 egress 검사 | 이메일 수신자 도메인도 warn | non-URL 외부 전송 갭 해소 |
+| `store_raw=False`에서 원문 excerpt | 패턴 요약만 반환 | 민감정보 노출 방지 |
+| HTML double quote만 | single + double quote | 실제 HTML에서 single quote 흔함 |
+
+### Codex 리뷰 반영 사항
+
+- Capability `allow` 반환 시 `default_action`보다 우선 (명시적 allow 존중)
+- 중첩 dict/list PII 재귀 탐지
+- Email destination egress warn
+- Recipient 필드 PII 면제
+
+---
+
+## Phase 1.5 구현 계획 (다음 단계)
+
+### Task 14: Shadow Mode
+
+**Files:**
+- Modify: `src/asr/guard.py` — `mode` 파라미터 추가
+- Create: `tests/test_shadow_mode.py`
+
+Guard 생성자에 `mode="enforce"` (기본) 파라미터 추가.
+- `shadow`: 모든 판정을 `allow`로 반환하되 원래 판정을 audit에 기록
+- `warn`: block 판정을 warn으로 다운그레이드
+- `enforce`: 현재 동작 (기본)
+
+### Task 15: MCP 프록시 어댑터
+
+**Files:**
+- Create: `src/asr/adapters/mcp_proxy.py`
+- Create: `tests/test_mcp_proxy.py`
+
+MCP `tools/call` 요청을 인터셉트하여 Guard.before_tool/after_tool을 자동 적용하는 프록시.
+
+```
+Client → MCP Proxy (ASR) → MCP Server
+              ↓
+         Guard.before_tool()
+         Scanner.scan(args)  [자동]
+         Tool execution
+         Guard.after_tool()
+         AuditLogger.log()   [자동]
+```
+
+### Task 16: YAML 정책 파일
+
+**Files:**
+- Create: `src/asr/config.py`
+- Create: `tests/test_config.py`
+
+```yaml
+# policies.yaml
+mode: shadow
+domain_allowlist:
+  - api.internal.com
+  - *.company.io
+block_egress: true
+pii_action: warn
+file_path_allowlist:
+  - /tmp/asr
+  - /data/safe
+capability_policy:
+  network_send: warn
+  shell_exec: block
+default_action: warn
+```
+
+### Task 17: Guard 내부 자동 Scanner 연동
+
+Guard.before_tool()에서 args의 문자열 값을 자동으로 Scanner에 넘겨 스캔 결과를 audit에 기록.
+Phase 1.5 전용 — MVP에서는 호출자가 명시적으로 Scanner를 호출.

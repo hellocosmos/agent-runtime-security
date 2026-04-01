@@ -1,28 +1,58 @@
-# Agent Security Runtime MVP Spec v0.2
+# Agent Security Runtime Spec v0.3
 
-> AI 에이전트의 입력 콘텐츠, 도구 호출, 실행 이력을 감시하고 통제하는 Python SDK
+> 권한 있는 AI 에이전트의 행동을 통제하고 증빙을 남기는 Agent Runtime Control Plane
 
 Date: 2026-04-01
-Status: Draft
-Scope: Python-only SDK MVP
+Status: v0.1 구현 완료, Phase 1.5 계획 확정
+Scope: Python SDK → MCP 프록시 어댑터 확장
 
 ---
 
 ## 1. Product Definition
 
-Agent Security Runtime(ASR)은 AI 에이전트의 입력 콘텐츠, 도구 호출, 실행 이력을 감시하고 통제하는 Python SDK다.
+### 제품 비전
 
-MVP는 다음 3개 모듈만 포함한다.
+Agent Security Runtime(ASR)은 **Agent Runtime Control Plane**이다. 여러 프레임워크와 여러 agent/tool/MCP 연결에 걸쳐 조직 공통 정책을 강제하고, 어떤 입력이 어떤 행동을 유발했는지 증빙까지 남기는 런타임 보안 계층이다.
 
-- `scanner`: 입력 텍스트/HTML/Markdown/PDF 추출 텍스트의 위험 신호 탐지
-- `guard`: tool call 전후 정책 검사와 차단/경고 판단
-- `audit`: 전 구간 구조화 로그 기록
+### 핵심 가치 (우선순위 순)
 
-핵심 목표:
+1. **Guard (행동 통제)** — 에이전트의 도구 호출 시점에서 정책 기반 허용/차단/경고. 제품의 핵심.
+2. **Audit (증빙)** — 전 구간 구조화 로그. 사고 추적, 감사, 규제 대응의 기반.
+3. **Scanner (입력 필터)** — 기초적인 콘텐츠 기반 위협 탐지. **1차 필터 역할이며, 완전한 방어가 아님.**
 
-- 숨은 지시문, 간접 prompt injection, 기초적인 콘텐츠 기반 공격을 조기에 탐지한다.
-- 에이전트의 실제 피해 지점인 tool/action 실행 시점을 통제한다.
-- 사고 발생 시 어떤 입력과 어떤 행동이 연결되었는지 추적 가능하게 만든다.
+### Scanner 한계 명시
+
+Scanner는 regex 기반 패턴 매칭으로 동작한다. 다음은 **탐지할 수 없다:**
+- 교묘한 semantic manipulation (편향된 프레이밍, 문맥적 조작)
+- 우회된 prompt injection (ROT13, 유니코드 변환, 다국어 패러프레이징)
+- 이미지/오디오 steganography
+- 동적 cloaking
+
+Scanner를 "AI 보안이 다 된다"로 포장하면 과장이다. 프로덕션에서는 LLM 기반 판별기 또는 외부 서비스(Lakera, Azure AI Content Safety 등)와 조합하여 사용해야 한다. Phase 2에서 ML 기반 탐지로 교체를 검토한다.
+
+### MVP 모듈 구성
+
+- `guard`: tool call 전후 정책 검사와 차단/경고 판단 **(핵심)**
+- `audit`: 전 구간 구조화 로그 기록 **(핵심)**
+- `scanner`: 입력 텍스트/HTML/Markdown/PDF 추출 텍스트의 위험 신호 탐지 (1차 필터)
+
+### 대상 사용처
+
+이 제품이 유효한 곳 — 아래 3가지가 동시에 충족되는 에이전트:
+- 외부 입력을 소비 (웹, 이메일, 문서, API)
+- 내부 권한을 보유 (파일, DB, API, 이메일 발송)
+- 실제 행동을 수행 (tool call, 외부 전송, 파일 쓰기)
+
+유효하지 않은 곳:
+- 읽기 전용 챗봇
+- tool이 거의 없는 sandbox 에이전트
+- 외부 전송 권한이 없는 시스템
+
+### 하지 말아야 할 포지셔닝
+
+- "prompt injection을 다 막아준다"
+- "Lakera/Palo Alto와 정면승부하는 범용 AI security platform"
+- "regex scanner가 핵심 가치다"
 
 ---
 
@@ -202,7 +232,7 @@ guard = Guard(
         "shell_exec": "block",
         "code_exec": "block",
     },
-    unknown_tool_default="warn",           # 미등록 도구 기본 동작
+    default_action="warn",                 # 세부 정책 비해당 시 기본 동작
     on_block=lambda d: notify_slack(d),    # 차단 시 콜백 (선택)
     on_warn=lambda d: log_to_siem(d),      # 경고 시 콜백 (선택)
 )
@@ -245,6 +275,7 @@ class BeforeToolDecision:
     severity: str             # "low" | "medium" | "high"
     tool_name: str
     redacted_args: dict       # 민감정보 마스킹된 인자
+    capabilities: list[str]   # 도구의 capability 태그
 
 @dataclass
 class AfterToolDecision:
@@ -290,14 +321,20 @@ audit = AuditLogger(
 
 ```
 1. Tool Blocklist        — 이름이 blocklist에 있으면 즉시 block
-2. Egress Control        — 네트워크 전송 관련 검사 (domain allowlist 포함)
-3. File Path Allowlist   — 파일 경로 검사
-4. PII Detection         — 인자 내 민감정보 검사
-5. Capability Policy     — capability 태그 기반 기본값 판단 (fallback)
-6. Unknown Tool Default  — 위 어느 정책에도 해당하지 않을 때
+2. Egress Control        — URL 기반 네트워크 전송 + 이메일 수신자 도메인 검사
+3. File Path Allowlist   — 파일 경로 검사 (pathlib.resolve 정규화)
+4. PII Detection         — 인자 내 민감정보 검사 (recipient 필드 제외)
+5. Capability Policy     — capability 태그 기반 판단 (진짜 fallback)
+6. Default Action        — 위 어느 정책에도 해당하지 않을 때
 ```
 
-**핵심:** Capability Policy는 다른 세부 정책의 **fallback**이다. `network_send: block`이어도 Egress Control의 `domain_allowlist`에 있는 도메인은 통과한다. Capability는 "세부 정책이 적용되지 않을 때의 기본 태도"를 결정한다.
+**핵심 — `matched_any_specific` 추적:**
+
+Egress, FilePath, PII는 "세부 정책"이다. 이 중 하나라도 **해당된** 도구(URL이 있거나, 파일 경로가 있거나, PII가 있어서 검사 대상이 된 도구)는 Capability Policy를 **건너뛴다.** 세부 정책이 모두 통과(허용)했으면 그대로 `allow`를 반환한다.
+
+Capability는 **세부 정책이 하나도 해당하지 않았을 때만** 적용되는 진짜 fallback이다. 예를 들어:
+- `http_post(url="https://api.internal.com")` → Egress가 해당 → allowlist 통과 → **allow** (capability 무시)
+- `run_command(cmd="ls")` → URL 없음, 파일 없음, PII 없음 → 세부 정책 비해당 → **capability fallback 적용**
 
 여러 정책이 동시에 해당될 경우, **가장 제한적인 판정이 우선**한다. (`block` > `warn` > `allow`)
 
@@ -315,6 +352,8 @@ audit = AuditLogger(
 
 - **목적:** 파일 읽기/쓰기 경로 제한
 - **동작:**
+  - `pathlib.Path.resolve()` + `relative_to()`로 경로 정규화 후 자식 디렉토리인지 확인
+  - `../` 경로 순회 및 접두사 충돌(`/tmp/asr_bad` vs `/tmp/asr`) 방지
   - allowlist 외 경로 접근 → `block`
   - 홈 디렉토리, SSH 키(`~/.ssh`), 환경파일(`.env`) 등 민감 경로는 기본 고위험 분류
 - **네이밍:** allowlist 기반. "이 경로만 허용"이 명확함
@@ -330,16 +369,19 @@ audit = AuditLogger(
   - bearer token / secret 형식 문자열
 - **MVP 비대상:** 주민등록번호 등 지역 특화 식별번호 (Phase 2에서 지역별 확장 포인트로 제공)
 - **동작:** `"off"` | `"warn"` | `"block"`
+- **Recipient 필드 면제:** `to`, `from`, `recipient`, `recipients`, `cc`, `bcc` 필드는 PII 스캔에서 제외. 수신자 이메일은 PII가 아니라 정상 업무 데이터이다.
+- **중첩 구조 지원:** dict/list가 중첩된 결과도 재귀적으로 PII를 탐지하고 마스킹한다.
 
 ### 7.5 `block_egress`
 
 - **목적:** 외부 송신을 원천 제한
 - **포함 범위:**
-  - non-allowlist domain
-  - private IP (10.x, 172.16-31.x, 192.168.x)
-  - localhost / loopback (127.0.0.1, ::1)
-  - link-local (169.254.x)
-  - 명시되지 않은 network_send capability
+  - non-allowlist domain (URL 기반) → `block`
+  - private IP (10.x, 172.16-31.x, 192.168.x) → `block`
+  - localhost / loopback (127.0.0.1, ::1) → `block`
+  - link-local (169.254.x) → `block`
+  - 이메일 수신자 도메인 검사 (`to`, `recipient`, `recipients` 필드) → allowlist 외 도메인 `warn`
+- **설계 결정:** URL이 없는 외부 전송(이메일, 메시지)은 heuristic이므로 `block`이 아닌 `warn`으로 처리
 
 ### 7.6 `tool_blocklist`
 
@@ -356,7 +398,7 @@ audit = AuditLogger(
   - `shell_exec` — 셸 실행
   - `code_exec` — 코드 실행
 - **기본값:** 명시 없는 capability는 `warn`
-- **참고:** 고위험 capability(`shell_exec`, `code_exec`)가 붙은 미등록 도구는 `unknown_tool_default`보다 capability_policy를 우선 적용
+- **참고:** capability가 `allow`를 반환하면 `default_action`보다 우선. 명시적 allow는 존중한다.
 
 ### 7.8 정책 설정 방식
 - MVP: Python 생성자 파라미터로 직접 전달
@@ -465,7 +507,7 @@ guard = Guard(
         "file_write": "warn",
         "shell_exec": "block",
     },
-    unknown_tool_default="warn",
+    default_action="warn",
     on_block=lambda d: print(f"[BLOCKED] {d.reason}"),
 )
 audit = AuditLogger(output="logs/audit.jsonl")
@@ -579,29 +621,96 @@ else:
 
 ---
 
-## 13. Deferred (Phase 1.5+)
+## 13. Roadmap
 
-### Phase 1.5
-- LangChain 어댑터 1개 (콜백 기반)
-- OpenAI Agents SDK 어댑터
+### Phase 1.5 — MCP 프록시 어댑터 + 운영 모드 (다음 단계)
 
-### Phase 2
+**MCP 프록시 어댑터 (최우선)**
+
+MCP는 도구 호출이 프로토콜로 표준화되어 있어서 interception이 가장 깔끔하다.
+MCP 서버 앞에 프록시로 들어가면 **프레임워크 무관하게** 모든 도구 호출을 통제 가능.
+
+```
+[Any Agent Framework]
+      ↓
+  [MCP Protocol]
+      ↓
+  [ASR Policy Proxy]  ← Phase 1.5 핵심 산출물
+      ↓
+  [MCP Server / Tool]
+```
+
+- Anthropic, OpenAI, Google 모두 MCP를 지원하거나 지원 예정
+- LangChain/OpenAI SDK 어댑터보다 MCP 프록시가 범용성이 높음
+- LangChain 콜백 어댑터는 MCP 이후 선택적으로 추가
+
+**Shadow Mode (운영 모드 전환)**
+
+프로덕션 배포 시 단계적 전환:
+1. **shadow** — 차단 없이 로그만 기록 (2주 운영, 오탐/미탐 관찰)
+2. **warn** — 실행은 허용하되 경고 기록 + 콜백 (정책 튜닝)
+3. **enforce** — 정책에 따라 실제 block (안정화 후)
+
+```python
+guard = Guard(
+    mode="shadow",  # "shadow" | "warn" | "enforce"
+    ...
+)
+```
+
+**기타 Phase 1.5 항목:**
+- Guard 내부 자동 Scanner 연동 (before_tool 시 args를 자동 스캔)
+- `allowed_read_paths` / `allowed_write_paths` 분리
+- YAML/JSON 정책 파일 로드
+
+### Phase 2 — 엔터프라이즈 확장
+
+**탐지 고도화:**
+- Scanner를 ML 기반 판별기로 교체 또는 외부 서비스 연동 (Lakera API, Azure AI Content Safety)
 - RAG Security Pipeline (문서 위험도, 출처 신뢰도, citation 강제)
 - Dynamic Cloaking Diff (보조 분석)
-- 고도화된 DLP / PII 분류기 (지역별 식별번호 확장)
-- YAML/JSON 정책 파일 로드
-- TypeScript 대시보드 + HTTP Proxy 모드
-- 외부 SIEM 연동 (Splunk, Datadog 등)
-- retrieval chunk trust scoring
+- 고도화된 DLP / PII 분류기 (Presidio 연동, 지역별 식별번호 확장)
+
+**운영/거버넌스:**
+- TypeScript 대시보드 (정책 관리, 이벤트 조회, 통계)
+- 외부 SIEM 연동 (Splunk, Datadog, Elastic)
+- 팀별 정책 분리 (팀별 allowlist, approved tool, emergency bypass)
+- 운영 메트릭 (차단 수, 경고 수, 오탐 사례, 우회 사례)
+
+**추가 어댑터:**
+- OpenAI Agents SDK 어댑터
+- LangChain/LangGraph 콜백 어댑터
+- HTTP Proxy 모드 (범용 fallback)
+
+### 경쟁 환경 참조
+
+| 경쟁자 | 포지션 | ASR 차별화 포인트 |
+|--------|--------|-----------------|
+| Lakera | Prompt defense API | ASR은 탐지보다 행동 통제 + 감사에 집중 |
+| Palo Alto AIRS | 엔터프라이즈 AI 방화벽 | ASR은 경량 SDK/프록시, 개발자 친화적 |
+| NeMo Guardrails | 오픈소스 guardrails | ASR은 MCP 네이티브, 정책 엔진 특화 |
+| OpenAI tool guardrails | 프레임워크 내장 | ASR은 크로스 프레임워크, 조직 공통 정책 |
+| Azure AI Content Safety | 클라우드 서비스 | ASR은 벤더 무관, 온프레미스 가능 |
+
+**시장 빈틈:** 현재 대부분의 guardrails는 프레임워크 종속이거나 탐지 중심. **크로스 프레임워크 정책 집행 + 감사 증빙**을 동시에 제공하는 경량 SDK/프록시는 아직 빈틈.
 
 ---
 
-## 14. Open Questions
+## 14. v0.1 구현 결과 및 해결된 문제
 
-1. **Capability taxonomy 범위** — MVP의 5개(`network_send`, `file_read`, `file_write`, `shell_exec`, `code_exec`)로 충분한가? `data_delete`, `auth_modify` 등이 필요한가?
-2. **PII 탐지 범위** — email, phone, API key, token 4종 외에 MVP에서 더 필요한 패턴이 있는가?
-3. **Unknown tool + 고위험 capability 조합** — 미등록 도구에 `shell_exec` capability가 붙으면 `unknown_tool_default`를 무시하고 capability_policy를 따르도록 했는데, 이 동작이 직관적인가?
-4. **Benign fixture 오탐 허용선** — 8개 중 1개 오탐(12.5%)을 허용했는데, 실무에서 이 기준이 적절한가?
+### 해결됨 (v0.1 구현 중 확정)
+- ~~Capability taxonomy 범위~~ → 5개로 확정 (`network_send`, `file_read`, `file_write`, `shell_exec`, `code_exec`)
+- ~~PII 탐지 범위~~ → email, phone, API key, bearer token, secret 5종. recipient 필드(`to`/`cc`/`bcc`) 면제.
+- ~~Unknown tool + capability 조합~~ → `matched_any_specific` 추적으로 해결. Capability는 진짜 fallback.
+- ~~파일 경로 우회~~ → `pathlib.resolve()` + `relative_to()` 정규화로 해결
+- ~~after_tool 타입 파괴~~ → 재귀적 타입 보존 마스킹으로 해결
+- ~~CSS 접근성 오탐~~ → 숨김 CSS + injection 문구 조합 검사로 해결
+
+### 남은 Open Questions
+1. **Shadow mode 기본값** — Phase 1.5에서 shadow/warn/enforce 중 기본값을 뭘로 할 것인가? 신규 사용자는 shadow가 안전하지만, 기존 사용자가 업그레이드하면 동작이 달라질 수 있다.
+2. **MCP 프록시 아키텍처** — MCP 서버 앞의 프록시가 `tools/call`을 인터셉트하는 방식으로 할지, MCP 미들웨어로 할지.
+3. **ML Scanner 교체 시점** — regex scanner를 언제 ML로 교체할지. Phase 2 초반인가, 엔터프라이즈 고객 확보 후인가.
+4. **첫 파일럿 ICP** — 사내 코딩 에이전트 운영팀 vs 고객지원 에이전트 운영팀 중 어디를 먼저 공략할지.
 
 ---
 
