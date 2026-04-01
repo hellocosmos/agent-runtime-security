@@ -1,0 +1,7 @@
+{
+  "tool_name": "never_seen_before_tool",
+  "args": {
+    "data": "some payload"
+  },
+  "capabilities": null
+}
