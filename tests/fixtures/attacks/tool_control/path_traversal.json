@@ -1,0 +1,7 @@
+{
+  "tool_name": "file_read",
+  "args": {
+    "path": "/etc/shadow"
+  },
+  "capabilities": ["file_read"]
+}
