@@ -10,9 +10,10 @@
 
 ### 논문: AI Agent Traps (Google DeepMind, 2025)
 
-> Franklin, M., Tomašev, N., Jacobs, J., Leibo, J. Z., & Osindero, S. (2025). *AI Agent Traps*. Google DeepMind. SSRN: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6372438
+> Franklin, M., Tomašev, N., Jacobs, J., Leibo, J. Z., & Osindero, S. (2026, March 28). *AI Agent Traps*. Google DeepMind.
+> Available at SSRN: https://ssrn.com/abstract=6372438 or http://dx.doi.org/10.2139/ssrn.6372438
 
-논문은 AI 에이전트가 웹 콘텐츠를 소비할 때 발생하는 공격 표면을 최초로 체계화했다:
+2026년 3월 28일에 공개된 따끈한 논문으로, AI 에이전트가 웹 콘텐츠를 소비할 때 발생하는 공격 표면을 최초로 체계화했다:
 
 | 공격 유형 | 대상 | 설명 |
 |-----------|------|------|
