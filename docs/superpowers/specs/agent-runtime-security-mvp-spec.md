@@ -1,4 +1,4 @@
-# Agent Security Runtime Spec v0.3
+# Agent Runtime Security Spec v0.3
 
 > 권한 있는 AI 에이전트의 행동을 통제하고 증빙을 남기는 Agent Runtime Control Plane
 
@@ -12,7 +12,7 @@ Scope: Python SDK → MCP 프록시 어댑터 확장
 
 ### 제품 비전
 
-Agent Security Runtime(ASR)은 **Agent Runtime Control Plane**이다. 여러 프레임워크와 여러 agent/tool/MCP 연결에 걸쳐 조직 공통 정책을 강제하고, 어떤 입력이 어떤 행동을 유발했는지 증빙까지 남기는 런타임 보안 계층이다.
+Agent Runtime Security(ASR)은 **Agent Runtime Control Plane**이다. 여러 프레임워크와 여러 agent/tool/MCP 연결에 걸쳐 조직 공통 정책을 강제하고, 어떤 입력이 어떤 행동을 유발했는지 증빙까지 남기는 런타임 보안 계층이다.
 
 ### 핵심 가치 (우선순위 순)
 

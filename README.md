@@ -1,17 +1,17 @@
-# Agent Security Runtime
+# Agent Runtime Security
 
 AI 에이전트의 입력 스캔, 도구 호출 가드, 감사 로그를 제공하는 Python SDK
 
 ## 설치
 
 ```bash
-pip install agent-security-runtime
+pip install agent-runtime-security
 ```
 
 PDF 지원이 필요한 경우:
 
 ```bash
-pip install agent-security-runtime[pdf]
+pip install agent-runtime-security[pdf]
 ```
 
 ## 빠른 시작
