@@ -173,15 +173,20 @@ class TestProtectDecorator:
         assert "[EMAIL]" in result
 
     def test_positional_args_checked(self):
-        """Positional args must also be inspected for PII"""
+        """Positional args must also be inspected for PII (to 필드는 제외, body의 PII는 검사)"""
         guard = Guard(pii_action="block")
 
         @guard.protect
         def send_email(to, subject, body):
             return "sent"
 
+        # to 필드는 수신자 제외 대상이므로 PII 차단 안 됨
+        result = send_email("victim@example.com", "test", "normal body")
+        assert result == "sent"
+
+        # body에 PII가 있으면 차단
         with pytest.raises(BlockedToolError):
-            send_email("victim@example.com", "test", "normal body")
+            send_email("victim@example.com", "test", "API key: sk-abc123def456ghi789jkl012mno345pqr678")
 
     def test_after_tool_preserves_dict_type(self):
         guard = Guard(pii_action="block")
@@ -202,3 +207,25 @@ class TestProtectDecorator:
             return 42
 
         assert some_tool() == 42
+
+
+class TestCapabilityAllow:
+    def test_capability_allow_respected(self):
+        """capability_policy에 allow가 설정된 경우, default_action을 무시하고 allow 반환"""
+        guard = Guard(
+            capability_policy={"file_read": "allow"},
+            default_action="warn",
+        )
+        d = guard.before_tool("file_read", {"query": "data"}, capabilities=["file_read"])
+        assert d.action == "allow"
+        assert d.policy_id == "capability_policy"
+
+
+class TestNestedDictPii:
+    def test_nested_dict_pii_detected(self):
+        """중첩 dict 내의 PII도 탐지하고 마스킹"""
+        guard = Guard(pii_action="block")
+        d = guard.after_tool("get_user", {"user": {"email": "admin@secret.com"}})
+        assert d.action == "redact_result"
+        assert isinstance(d.redacted_result, dict)
+        assert "admin@secret.com" not in str(d.redacted_result)

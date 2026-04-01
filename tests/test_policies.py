@@ -43,9 +43,21 @@ class TestEgress:
         assert result is None
 
     def test_no_url_in_args(self):
-        """Egress는 URL 기반 전송만 검사"""
+        """URL 없이 이메일 목적지가 있는 경우 — allowlist에 없으면 warn 반환"""
         result = evaluate_egress("send_email", {"to": "a@b.com", "body": "hello"},
                                 domain_allowlist=[], block_egress=True)
+        assert result is not None and result["action"] == "warn"
+
+    def test_email_destination_warned(self):
+        """이메일 수신자 도메인이 allowlist에 없으면 warn"""
+        result = evaluate_egress("send_email", {"to": "attacker@evil.com"},
+                                domain_allowlist=["internal.com"], block_egress=True)
+        assert result is not None and result["action"] == "warn"
+
+    def test_email_destination_allowed(self):
+        """이메일 수신자 도메인이 allowlist에 있으면 None"""
+        result = evaluate_egress("send_email", {"to": "user@internal.com"},
+                                domain_allowlist=["internal.com"], block_egress=True)
         assert result is None
 
     def test_subdomain_allowed(self):
@@ -101,6 +113,11 @@ class TestPiiPolicy:
 
     def test_no_pii(self):
         result = evaluate_pii("send_email", {"body": "Hello, how are you?"}, pii_action="block")
+        assert result is None
+
+    def test_pii_exempt_recipient(self):
+        """수신자 필드(to)의 이메일 주소는 PII 검사에서 제외"""
+        result = evaluate_pii("send_email", {"to": "user@example.com", "body": "normal"}, pii_action="block")
         assert result is None
 
 

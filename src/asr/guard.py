@@ -148,7 +148,7 @@ class Guard:
         # 5. Capability 정책 — 진짜 fallback
         if caps and self._capability_policy:
             r = evaluate_capability(capabilities=caps, policy=self._capability_policy)
-            if r is not None and r["action"] != "allow":
+            if r is not None:
                 return _decision(r)
 
         # 6. 최종 fallback — default_action
@@ -285,30 +285,24 @@ class Guard:
 
     @staticmethod
     def _extract_text(result: Any) -> str:
-        """결과에서 텍스트를 추출 (PII 검사용)"""
+        """결과에서 텍스트를 재귀적으로 추출 (PII 검사용, 중첩 dict/list 포함)"""
         if isinstance(result, str):
             return result
         if isinstance(result, dict):
             parts = []
             for v in result.values():
-                if isinstance(v, str):
-                    parts.append(v)
+                parts.append(Guard._extract_text(v))
             return " ".join(parts)
-        if isinstance(result, list):
-            parts = []
-            for item in result:
-                if isinstance(item, str):
-                    parts.append(item)
-            return " ".join(parts)
-        return str(result)
+        if isinstance(result, (list, tuple)):
+            return " ".join(Guard._extract_text(item) for item in result)
+        return str(result) if result is not None else ""
 
-    @staticmethod
-    def _redact_result(result: Any) -> Any:
-        """결과 타입을 보존하면서 PII 마스킹 (str→str, dict→dict, list→list)"""
+    def _redact_result(self, result: Any) -> Any:
+        """결과 타입을 보존하면서 PII 마스킹 — 중첩 dict/list도 재귀적으로 처리"""
         if isinstance(result, str):
             return redact_pii(result)
         if isinstance(result, dict):
-            return {k: redact_pii(v) if isinstance(v, str) else v for k, v in result.items()}
-        if isinstance(result, list):
-            return [redact_pii(item) if isinstance(item, str) else item for item in result]
+            return {k: self._redact_result(v) for k, v in result.items()}
+        if isinstance(result, (list, tuple)):
+            return type(result)(self._redact_result(item) for item in result)
         return result

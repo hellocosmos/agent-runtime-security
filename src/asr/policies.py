@@ -17,16 +17,23 @@ def evaluate_egress(tool_name: str, args: dict, *, domain_allowlist: list[str], 
     if not block_egress:
         return None
     url_str = _extract_url(args)
-    if url_str is None:
+    if url_str is not None:
+        parsed = urlparse(url_str)
+        hostname = parsed.hostname
+        if hostname is None:
+            return None
+        if _is_private_or_local(hostname):
+            return {"action": "block", "reason": "private_or_local_address", "policy_id": "egress_control", "severity": "high"}
+        if not _domain_matches(hostname, domain_allowlist):
+            return {"action": "block", "reason": "domain_not_allowed", "policy_id": "domain_allowlist", "severity": "high"}
         return None
-    parsed = urlparse(url_str)
-    hostname = parsed.hostname
-    if hostname is None:
-        return None
-    if _is_private_or_local(hostname):
-        return {"action": "block", "reason": "private_or_local_address", "policy_id": "egress_control", "severity": "high"}
-    if not _domain_matches(hostname, domain_allowlist):
-        return {"action": "block", "reason": "domain_not_allowed", "policy_id": "domain_allowlist", "severity": "high"}
+    # URL이 없는 경우 이메일 수신자 필드 확인
+    email_dest = _extract_email_destination(args)
+    if email_dest is not None:
+        email_domain = email_dest.split("@")[1] if "@" in email_dest else None
+        if email_domain and not _domain_matches(email_domain, domain_allowlist):
+            return {"action": "warn", "reason": "email_destination_not_in_allowlist",
+                    "policy_id": "egress_control", "severity": "medium"}
     return None
 
 
@@ -121,9 +128,24 @@ def _domain_matches(hostname: str, allowlist: list[str]) -> bool:
                 return True
     return False
 
+def _extract_email_destination(args: dict) -> str | None:
+    """수신자 관련 필드에서 이메일 주소를 추출"""
+    for key in ("to", "recipient", "recipients"):
+        if key in args:
+            val = args[key]
+            if isinstance(val, str) and "@" in val:
+                return val
+            if isinstance(val, list) and val and isinstance(val[0], str) and "@" in val[0]:
+                return val[0]
+    return None
+
 def _args_to_text(args: dict) -> str:
+    # PII 검사 시 수신자 관련 필드는 건너뜀 (정상적인 이메일 to 필드가 PII 차단을 유발하지 않도록)
+    _RECIPIENT_KEYS = {"to", "from", "recipient", "recipients", "cc", "bcc"}
     parts = []
-    for value in args.values():
+    for key, value in args.items():
+        if key in _RECIPIENT_KEYS:
+            continue
         if isinstance(value, str):
             parts.append(value)
         elif isinstance(value, dict):
