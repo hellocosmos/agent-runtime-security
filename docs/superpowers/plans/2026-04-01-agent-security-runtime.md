@@ -4,7 +4,7 @@
 
 **Goal:** AI 에이전트의 입력 스캔, 도구 호출 가드, 감사 로그를 제공하는 Python SDK MVP 구현
 
-**Architecture:** 3개 코어 모듈(audit, guard, scanner)로 구성된 인프로세스 Python SDK. Audit가 기반이 되고, Guard와 Scanner가 Audit에 이벤트를 기록한다. 모든 모듈은 프레임워크 독립적이며, generic decorator/wrapper로 임의의 Python 함수에 적용 가능하다.
+**Architecture:** 3개 코어 모듈(audit, guard, scanner)로 구성된 인프로세스 Python SDK. Audit는 이벤트 스키마와 JSONL 출력을 담당하며, 호출자가 명시적으로 `audit.log_scan()`, `audit.log_guard()`를 호출하여 기록한다 (Guard/Scanner가 자동으로 Audit에 기록하지 않음). 모든 모듈은 프레임워크 독립적이며, generic decorator/wrapper로 임의의 Python 함수에 적용 가능하다.
 
 **Tech Stack:** Python 3.11+, pytest, pyproject.toml (PEP 621), 표준 라이브러리 중심
 
@@ -321,6 +321,7 @@ class BeforeToolDecision:
     severity: str  # "low" | "medium" | "high"
     tool_name: str
     redacted_args: dict = field(default_factory=dict)
+    capabilities: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -614,6 +615,7 @@ class AuditLogger:
             event.update(
                 {
                     "tool_name": decision.tool_name,
+                    "capabilities": decision.capabilities,
                     "decision": decision.action,
                     "reason": decision.reason,
                     "policy_id": decision.policy_id,
@@ -958,6 +960,8 @@ class TestEgress:
         assert result is None
 
     def test_no_url_in_args(self):
+        """Egress는 URL 기반 전송만 검사. 이메일/메시지형 외부 전송은
+        capability_policy의 network_send에 의존한다."""
         result = evaluate_egress(
             "send_email",
             {"to": "a@b.com", "body": "hello"},
@@ -1008,6 +1012,26 @@ class TestFilePath:
             "file_read",
             {"path": "/app/.env"},
             allowlist=["/app"],
+        )
+        assert result is not None
+        assert result["action"] == "block"
+
+    def test_path_traversal_blocked(self):
+        """../로 allowlist 우회 시도 차단"""
+        result = evaluate_file_path(
+            "file_read",
+            {"path": "/tmp/asr/../../../etc/passwd"},
+            allowlist=["/tmp/asr"],
+        )
+        assert result is not None
+        assert result["action"] == "block"
+
+    def test_prefix_collision_blocked(self):
+        """/tmp/asr_bad은 /tmp/asr의 자식이 아니므로 차단"""
+        result = evaluate_file_path(
+            "file_write",
+            {"path": "/tmp/asr_bad/evil.txt"},
+            allowlist=["/tmp/asr"],
         )
         assert result is not None
         assert result["action"] == "block"
@@ -1223,10 +1247,16 @@ def evaluate_file_path(
                 "severity": "high",
             }
 
-    # allowlist 검사
+    # allowlist 검사 — 경로 정규화 후 자식 디렉토리인지 확인
+    import pathlib
+    resolved = pathlib.Path(path_str).resolve()
     for allowed in allowlist:
-        if path_str.startswith(allowed):
-            return None
+        allowed_resolved = pathlib.Path(allowed).resolve()
+        try:
+            resolved.relative_to(allowed_resolved)
+            return None  # 허용 디렉토리의 자식
+        except ValueError:
+            continue
 
     return {
         "action": "block",
@@ -1809,6 +1839,15 @@ class BlockedToolError(Exception):
     def __init__(self, decision: BeforeToolDecision):
         self.decision = decision
         super().__init__(f"Tool '{decision.tool_name}' blocked: {decision.reason}")
+
+
+def _has_url(args: dict) -> bool:
+    """args에 URL로 보이는 값이 있는지 확인"""
+    for key in ("url", "endpoint", "uri", "href", "target"):
+        if key in args and isinstance(args[key], str):
+            if args[key].startswith(("http://", "https://")):
+                return True
+    return False
 ```
 
 - [ ] **Step 4: 테스트 통과 확인**
@@ -2164,17 +2203,17 @@ class Scanner:
         findings = []
         # 숨김 스타일이 적용된 태그의 텍스트 콘텐츠를 추출하여 injection 문구 검사
         hidden_tag_re = re.compile(
-            r"<[^>]+style\s*=\s*\"[^\"]*("
+            r"<[^>]+style\s*=\s*[\"']([^\"']*("
             r"display\s*:\s*none"
             r"|visibility\s*:\s*hidden"
-            r"|position\s*:\s*absolute[^\"]*(?:left|top)\s*:\s*-\d{4,}px"
+            r"|position\s*:\s*absolute[^\"']*(?:left|top)\s*:\s*-\d{4,}px"
             r"|font-size\s*:\s*0"
             r"|opacity\s*:\s*0(?:\.0+)?"
-            r")[^\"]*\"[^>]*>(.*?)</",
+            r")[^\"']*)[\"'][^>]*>(.*?)</",
             re.IGNORECASE | re.DOTALL,
         )
         for match in hidden_tag_re.finditer(content):
-            inner_text = match.group(2)
+            inner_text = match.group(3)  # 그룹: 1=전체 style값, 2=매칭 속성, 3=태그 내부 텍스트
             if _INJECTION_RE.search(inner_text):
                 findings.append(
                     Finding(
