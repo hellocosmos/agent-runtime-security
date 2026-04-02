@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import functools
 import inspect
+import logging
 from typing import Any, Callable
+
+logger = logging.getLogger("asr.guard")
 
 from asr.pii import has_pii, redact_pii
 from asr.policies import (
@@ -51,6 +54,7 @@ class Guard:
     def __init__(
         self,
         *,
+        mode: str = "enforce",
         domain_allowlist: list[str] | None = None,
         file_path_allowlist: list[str] | None = None,
         pii_action: str = "off",
@@ -61,6 +65,9 @@ class Guard:
         on_block: Callable | None = None,
         on_warn: Callable | None = None,
     ):
+        if mode not in ("enforce", "warn", "shadow"):
+            raise ValueError(f"Invalid mode: {mode!r}. Must be 'enforce', 'warn', or 'shadow'")
+        self._mode = mode
         self._domain_allowlist = domain_allowlist or []
         self._file_path_allowlist = file_path_allowlist or []
         self._pii_action = pii_action
@@ -70,6 +77,7 @@ class Guard:
         self._default_action = default_action
         self._on_block = on_block
         self._on_warn = on_warn
+        logger.info("Guard initialized (mode=%s)", self._mode)
 
     # ------------------------------------------------------------------
     # before_tool
@@ -86,14 +94,18 @@ class Guard:
         redacted = self._redact_args(args)
 
         def _decision(result: dict) -> BeforeToolDecision:
+            original = result["action"]
+            effective = self._apply_mode(original)
             d = BeforeToolDecision(
-                action=result["action"],
+                action=effective,
                 reason=result["reason"],
                 policy_id=result["policy_id"],
                 severity=result["severity"],
                 tool_name=name,
                 redacted_args=redacted,
                 capabilities=caps,
+                original_action=original,
+                mode=self._mode,
             )
             self._fire_callbacks(d)
             return d
@@ -147,13 +159,15 @@ class Guard:
             if worst_result is not None:
                 return _decision(worst_result)
             d = BeforeToolDecision(
-                action="allow",
+                action=self._apply_mode("allow"),
                 reason="specific_policy_passed",
                 policy_id="specific_policy",
                 severity="low",
                 tool_name=name,
                 redacted_args=redacted,
                 capabilities=caps,
+                original_action="allow",
+                mode=self._mode,
             )
             self._fire_callbacks(d)
             return d
@@ -186,6 +200,8 @@ class Guard:
                 severity="low",
                 tool_name=name,
                 redacted_result=result,
+                original_action="allow",
+                mode=self._mode,
             )
 
         text = self._extract_text(result)
@@ -197,6 +213,8 @@ class Guard:
                 severity="low",
                 tool_name=name,
                 redacted_result=result,
+                original_action="allow",
+                mode=self._mode,
             )
 
         # PII 발견
@@ -210,6 +228,8 @@ class Guard:
                 severity="high",
                 tool_name=name,
                 redacted_result=redacted,
+                original_action="redact_result",
+                mode=self._mode,
             )
 
         # pii_action == "warn"
@@ -220,6 +240,8 @@ class Guard:
             severity="medium",
             tool_name=name,
             redacted_result=redacted,
+            original_action="warn",
+            mode=self._mode,
         )
 
     # ------------------------------------------------------------------
@@ -277,6 +299,15 @@ class Guard:
     # ------------------------------------------------------------------
     # 내부 유틸리티
     # ------------------------------------------------------------------
+    def _apply_mode(self, original_action: str) -> str:
+        """모드에 따라 effective_action 반환"""
+        if self._mode == "enforce":
+            return original_action
+        if self._mode == "warn":
+            return "warn" if original_action == "block" else original_action
+        # shadow
+        return "allow"
+
     def _redact_args(self, args: dict) -> dict:
         """args dict의 문자열 값에서 PII를 마스킹"""
         redacted = {}

@@ -274,3 +274,118 @@ class TestNestedDictPii:
         assert d.action == "redact_result"
         assert isinstance(d.redacted_result, dict)
         assert "admin@secret.com" not in str(d.redacted_result)
+
+
+class TestGuardModeEnforce:
+    """enforce 모드 — 기존 v0.1 동작과 동일"""
+
+    def test_enforce_is_default(self):
+        guard = Guard(tool_blocklist=["dangerous"])
+        d = guard.before_tool("dangerous", {})
+        assert d.action == "block"
+        assert d.original_action == "block"
+        assert d.mode == "enforce"
+
+    def test_enforce_block_stays_block(self):
+        guard = Guard(mode="enforce", tool_blocklist=["dangerous"])
+        d = guard.before_tool("dangerous", {})
+        assert d.action == "block"
+        assert d.original_action == "block"
+
+
+class TestGuardModeWarn:
+    """warn 모드 — block→warn 다운그레이드"""
+
+    def test_warn_downgrades_block_to_warn(self):
+        guard = Guard(mode="warn", tool_blocklist=["dangerous"])
+        d = guard.before_tool("dangerous", {})
+        assert d.action == "warn"
+        assert d.original_action == "block"
+        assert d.mode == "warn"
+
+    def test_warn_keeps_warn_as_warn(self):
+        guard = Guard(mode="warn", default_action="warn")
+        d = guard.before_tool("unknown_tool", {})
+        assert d.action == "warn"
+        assert d.original_action == "warn"
+
+    def test_warn_keeps_allow_as_allow(self):
+        guard = Guard(mode="warn", default_action="allow")
+        d = guard.before_tool("safe_tool", {})
+        assert d.action == "allow"
+        assert d.original_action == "allow"
+
+    def test_warn_no_blocked_tool_error(self):
+        guard = Guard(mode="warn", tool_blocklist=["dangerous"])
+
+        @guard.protect
+        def dangerous():
+            return "executed"
+
+        result = dangerous()
+        assert result == "executed"
+
+    def test_warn_on_warn_callback_fires_for_downgraded_block(self):
+        warned = []
+        guard = Guard(mode="warn", tool_blocklist=["dangerous"],
+                      on_warn=lambda d: warned.append(d))
+        guard.before_tool("dangerous", {})
+        assert len(warned) == 1
+        assert warned[0].original_action == "block"
+
+    def test_warn_on_block_callback_does_not_fire(self):
+        blocked = []
+        guard = Guard(mode="warn", tool_blocklist=["dangerous"],
+                      on_block=lambda d: blocked.append(d))
+        guard.before_tool("dangerous", {})
+        assert len(blocked) == 0
+
+
+class TestGuardModeShadow:
+    """shadow 모드 — 전부 allow, original_action 기록"""
+
+    def test_shadow_downgrades_block_to_allow(self):
+        guard = Guard(mode="shadow", tool_blocklist=["dangerous"])
+        d = guard.before_tool("dangerous", {})
+        assert d.action == "allow"
+        assert d.original_action == "block"
+        assert d.mode == "shadow"
+
+    def test_shadow_downgrades_warn_to_allow(self):
+        guard = Guard(mode="shadow", default_action="warn")
+        d = guard.before_tool("unknown_tool", {})
+        assert d.action == "allow"
+        assert d.original_action == "warn"
+
+    def test_shadow_no_blocked_tool_error(self):
+        guard = Guard(mode="shadow", tool_blocklist=["dangerous"])
+
+        @guard.protect
+        def dangerous():
+            return "executed"
+
+        result = dangerous()
+        assert result == "executed"
+
+    def test_shadow_no_callbacks(self):
+        blocked = []
+        warned = []
+        guard = Guard(mode="shadow", tool_blocklist=["dangerous"],
+                      on_block=lambda d: blocked.append(d),
+                      on_warn=lambda d: warned.append(d))
+        guard.before_tool("dangerous", {})
+        assert len(blocked) == 0
+        assert len(warned) == 0
+
+    def test_shadow_after_tool_still_redacts(self):
+        """shadow여도 after_tool의 PII redact는 강제"""
+        guard = Guard(mode="shadow", pii_action="block")
+        d = guard.after_tool("search", "Found: admin@secret.com")
+        assert d.action == "redact_result"
+        assert "admin@secret.com" not in str(d.redacted_result)
+
+    def test_shadow_after_tool_mode_recorded(self):
+        guard = Guard(mode="shadow", pii_action="block")
+        d = guard.after_tool("search", "Found: admin@secret.com")
+        assert d.mode == "shadow"
+        assert d.original_action == "redact_result"
