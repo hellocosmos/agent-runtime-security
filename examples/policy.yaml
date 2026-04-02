@@ -1,0 +1,12 @@
+version: 1
+mode: shadow
+domain_allowlist:
+  - internal.com
+file_path_allowlist:
+  - /tmp/safe
+pii_action: block
+block_egress: true
+capability_policy:
+  network_send: warn
+  file_read: allow
+default_action: warn
