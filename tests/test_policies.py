@@ -1,4 +1,4 @@
-"""개별 정책 평가 테스트"""
+"""Tests for individual policy evaluators."""
 from asr.policies import (
     evaluate_tool_blocklist, evaluate_egress, evaluate_file_path,
     evaluate_pii, evaluate_capability, evaluate_unknown_tool,
@@ -43,19 +43,19 @@ class TestEgress:
         assert result is None
 
     def test_no_url_in_args(self):
-        """URL 없이 이메일 목적지가 있는 경우 — allowlist에 없으면 warn 반환"""
+        """Email destinations without URLs should warn when not allowlisted."""
         result = evaluate_egress("send_email", {"to": "a@b.com", "body": "hello"},
                                 domain_allowlist=[], block_egress=True)
         assert result is not None and result["action"] == "warn"
 
     def test_email_destination_warned(self):
-        """이메일 수신자 도메인이 allowlist에 없으면 warn"""
+        """Recipient domains outside the allowlist should warn."""
         result = evaluate_egress("send_email", {"to": "attacker@evil.com"},
                                 domain_allowlist=["internal.com"], block_egress=True)
         assert result is not None and result["action"] == "warn"
 
     def test_email_destination_allowed(self):
-        """이메일 수신자 도메인이 allowlist에 있으면 None"""
+        """Allowlisted recipient domains should return None."""
         result = evaluate_egress("send_email", {"to": "user@internal.com"},
                                 domain_allowlist=["internal.com"], block_egress=True)
         assert result is None
@@ -84,12 +84,12 @@ class TestFilePath:
         assert result is not None and result["action"] == "block"
 
     def test_path_traversal_blocked(self):
-        """../로 allowlist 우회 시도 차단"""
+        """Path traversal should not bypass the allowlist."""
         result = evaluate_file_path("file_read", {"path": "/tmp/asr/../../../etc/passwd"}, allowlist=["/tmp/asr"])
         assert result is not None and result["action"] == "block"
 
     def test_prefix_collision_blocked(self):
-        """/tmp/asr_bad은 /tmp/asr의 자식이 아님"""
+        """/tmp/asr_bad is not a child of /tmp/asr."""
         result = evaluate_file_path("file_write", {"path": "/tmp/asr_bad/evil.txt"}, allowlist=["/tmp/asr"])
         assert result is not None and result["action"] == "block"
 
@@ -116,7 +116,7 @@ class TestPiiPolicy:
         assert result is None
 
     def test_pii_exempt_recipient(self):
-        """수신자 필드(to)의 이메일 주소는 PII 검사에서 제외"""
+        """Recipient email fields such as to should be exempt from PII checks."""
         result = evaluate_pii("send_email", {"to": "user@example.com", "body": "normal"}, pii_action="block")
         assert result is None
 

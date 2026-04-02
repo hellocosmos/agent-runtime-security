@@ -1,4 +1,4 @@
-"""공유 dataclass 생성 테스트"""
+"""Tests for the shared dataclasses."""
 
 from asr.types import Finding, ScanResult, BeforeToolDecision, AfterToolDecision
 
@@ -8,7 +8,7 @@ class TestFinding:
         f = Finding(
             pattern_id="css_hidden_text",
             severity="high",
-            description="CSS로 숨겨진 텍스트 발견",
+            description="Detected hidden CSS text",
             location="line 42",
         )
         assert f.pattern_id == "css_hidden_text"
@@ -19,14 +19,14 @@ class TestFinding:
         f = Finding(
             pattern_id="prompt_injection_keywords",
             severity="medium",
-            description="프롬프트 인젝션 키워드 탐지",
+            description="Detected prompt injection keywords",
         )
         assert f.location is None
 
 
 class TestScanResult:
     def test_create_scan_result(self):
-        finding = Finding(pattern_id="test", severity="low", description="테스트")
+        finding = Finding(pattern_id="test", severity="low", description="test")
         result = ScanResult(
             score=0.5, severity="medium", findings=[finding],
             redacted_excerpt="...", source_type="html",

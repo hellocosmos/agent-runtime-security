@@ -1,4 +1,4 @@
-"""AuditLogger 테스트"""
+"""Tests for AuditLogger."""
 
 import json
 from asr.audit import AuditLogger
@@ -10,7 +10,7 @@ class TestAuditLoggerStdout:
         audit = AuditLogger(output="stdout")
         result = ScanResult(
             score=0.82, severity="high",
-            findings=[Finding(pattern_id="css_hidden_text", severity="high", description="CSS 숨김 텍스트")],
+            findings=[Finding(pattern_id="css_hidden_text", severity="high", description="Hidden CSS text")],
             redacted_excerpt="Ignore previous ...", source_type="html",
             source_ref="https://example.com", scanned_at="2026-04-01T12:00:00Z",
         )
@@ -128,7 +128,7 @@ class TestAuditModeFields:
         )
         audit.log_guard(decision, trace_id="t-mode-1")
         event = json.loads(capsys.readouterr().out.strip())
-        assert event["decision"] == "warn"  # 기존 필드 유지
+        assert event["decision"] == "warn"  # Legacy field remains for compatibility.
         assert event["effective_action"] == "warn"
         assert event["original_action"] == "block"
         assert event["mode"] == "warn"
@@ -143,7 +143,7 @@ class TestAuditModeFields:
         )
         audit.log_guard(decision, trace_id="t-mode-2")
         event = json.loads(capsys.readouterr().out.strip())
-        assert event["decision"] == "redact_result"  # 기존 필드 유지
+        assert event["decision"] == "redact_result"  # Legacy field remains for compatibility.
         assert event["effective_action"] == "redact_result"
         assert event["original_action"] == "redact_result"
         assert event["mode"] == "shadow"

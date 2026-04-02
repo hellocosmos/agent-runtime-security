@@ -28,14 +28,14 @@ def load_policy_file(path: str) -> dict:
         data = _load_yaml(file_path)
     else:
         raise ValueError(
-            f"지원하지 않는 파일 확장자: '{suffix}'. "
-            f".json, .yaml, .yml만 지원합니다"
+            f"Unsupported file extension: '{suffix}'. "
+            f"Only .json, .yaml, and .yml are supported"
         )
 
     if not isinstance(data, dict):
         raise ValueError(
-            "정책 파일은 최상위가 mapping이어야 합니다. "
-            f"실제 타입: {type(data).__name__}"
+            "Policy files must use a mapping at the top level. "
+            f"Got: {type(data).__name__}"
         )
 
     return data
@@ -51,7 +51,7 @@ def _load_yaml(path: Path) -> object:
         import yaml
     except ImportError:
         raise ImportError(
-            "YAML 정책 파일을 사용하려면 pyyaml이 필요합니다: "
+            "pyyaml is required to load YAML policy files: "
             "pip install agent-runtime-security[yaml]"
         )
     with open(path, encoding="utf-8") as f:

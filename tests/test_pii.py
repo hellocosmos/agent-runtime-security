@@ -1,4 +1,4 @@
-"""PII 탐지 패턴 테스트"""
+"""Tests for PII detection patterns."""
 from asr.pii import detect_pii, redact_pii, has_pii
 
 
@@ -8,7 +8,7 @@ class TestDetectPii:
         assert any(h["type"] == "email" for h in hits)
 
     def test_detect_phone_kr(self):
-        hits = detect_pii("전화번호: 010-1234-5678")
+        hits = detect_pii("Phone: 010-1234-5678")
         assert any(h["type"] == "phone" for h in hits)
 
     def test_detect_phone_intl(self):

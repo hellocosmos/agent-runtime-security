@@ -1,4 +1,4 @@
-"""fixture 기반 통합 테스트 — 공격/정상 시나리오 전체 검증"""
+"""Fixture-based integration tests covering attack and benign scenarios."""
 import json
 import pathlib
 import pytest

@@ -1,4 +1,4 @@
-"""Guard 통합 테스트 — 정책 평가 순서 포함"""
+"""Integration tests for Guard, including policy order."""
 import pytest
 from asr.guard import Guard, BlockedToolError
 from asr.types import BeforeToolDecision, AfterToolDecision
@@ -28,7 +28,7 @@ class TestGuardBeforeTool:
         assert d.policy_id == "domain_allowlist"
 
     def test_egress_allows_internal_domain(self):
-        """allowlist 도메인 → egress 통과 → 세부 정책 해당 → capability 건너뜀 → allow"""
+        """Allowed domains should pass egress and skip capability fallback."""
         d = self.guard.before_tool("http_post", {"url": "https://api.internal.com/data"}, capabilities=["network_send"])
         assert d.action in ("allow", "warn")
         assert d.policy_id != "capability_policy"
@@ -59,7 +59,7 @@ class TestGuardBeforeTool:
         assert d.policy_id == "default_action"
 
     def test_capability_is_true_fallback(self):
-        """Capability는 진짜 fallback: 세부 정책이 해당된 도구는 capability를 다시 평가하지 않는다."""
+        """Capability is a true fallback and does not rerun after specific matches."""
         guard = Guard(
             domain_allowlist=["api.internal.com"],
             block_egress=True,
@@ -173,18 +173,18 @@ class TestProtectDecorator:
         assert "[EMAIL]" in result
 
     def test_positional_args_checked(self):
-        """Positional args must also be inspected for PII (to 필드는 제외, body의 PII는 검사)"""
+        """Positional args are inspected for PII, except recipient fields such as to."""
         guard = Guard(pii_action="block")
 
         @guard.protect
         def send_email(to, subject, body):
             return "sent"
 
-        # to 필드는 수신자 제외 대상이므로 PII 차단 안 됨
+        # Recipient fields such as "to" are exempt from PII blocking.
         result = send_email("victim@example.com", "test", "normal body")
         assert result == "sent"
 
-        # body에 PII가 있으면 차단
+        # PII in the body should still trigger blocking.
         with pytest.raises(BlockedToolError):
             send_email("victim@example.com", "test", "API key: sk-abc123def456ghi789jkl012mno345pqr678")
 
@@ -210,10 +210,10 @@ class TestProtectDecorator:
 
 
 class TestEgressEmailWiring:
-    """URL 없는 이메일 전송도 egress 정책을 타야 한다"""
+    """Email sends without URLs should still go through egress policy."""
 
     def test_email_to_external_domain_warns(self):
-        """send_email(to="attacker@evil.com") → egress 정책이 warn 반환"""
+        """External email destinations should return warn from egress policy."""
         guard = Guard(
             domain_allowlist=["internal.com"],
             block_egress=True,
@@ -223,7 +223,7 @@ class TestEgressEmailWiring:
         assert d.policy_id == "egress_control"
 
     def test_email_to_allowed_domain_allows(self):
-        """수신자 도메인이 allowlist에 있으면 allow"""
+        """Allowed recipient domains should pass."""
         guard = Guard(
             domain_allowlist=["internal.com"],
             block_egress=True,
@@ -232,7 +232,7 @@ class TestEgressEmailWiring:
         assert d.action == "allow"
 
     def test_email_egress_sets_matched_specific(self):
-        """이메일 egress가 해당되면 capability fallback을 건너뛴다"""
+        """Email egress matches should skip capability fallback."""
         guard = Guard(
             domain_allowlist=["internal.com"],
             block_egress=True,
@@ -244,7 +244,7 @@ class TestEgressEmailWiring:
         assert d.policy_id != "capability_policy"
 
     def test_recipients_list_external_warns(self):
-        """recipients 리스트의 외부 도메인도 egress 경고"""
+        """External domains in recipients lists should also trigger egress warnings."""
         guard = Guard(
             domain_allowlist=["internal.com"],
             block_egress=True,
@@ -256,7 +256,7 @@ class TestEgressEmailWiring:
 
 class TestCapabilityAllow:
     def test_capability_allow_respected(self):
-        """capability_policy에 allow가 설정된 경우, default_action을 무시하고 allow 반환"""
+        """Allow in capability_policy should override default_action."""
         guard = Guard(
             capability_policy={"file_read": "allow"},
             default_action="warn",
@@ -268,7 +268,7 @@ class TestCapabilityAllow:
 
 class TestNestedDictPii:
     def test_nested_dict_pii_detected(self):
-        """중첩 dict 내의 PII도 탐지하고 마스킹"""
+        """Nested dict values should also be detected and redacted for PII."""
         guard = Guard(pii_action="block")
         d = guard.after_tool("get_user", {"user": {"email": "admin@secret.com"}})
         assert d.action == "redact_result"
@@ -277,7 +277,7 @@ class TestNestedDictPii:
 
 
 class TestGuardModeEnforce:
-    """enforce 모드 — 기존 v0.1 동작과 동일"""
+    """Enforce mode matches the original v0.1 behavior."""
 
     def test_enforce_is_default(self):
         guard = Guard(tool_blocklist=["dangerous"])
@@ -294,7 +294,7 @@ class TestGuardModeEnforce:
 
 
 class TestGuardModeWarn:
-    """warn 모드 — block→warn 다운그레이드"""
+    """Warn mode downgrades block decisions to warn."""
 
     def test_warn_downgrades_block_to_warn(self):
         guard = Guard(mode="warn", tool_blocklist=["dangerous"])
@@ -342,7 +342,7 @@ class TestGuardModeWarn:
 
 
 class TestGuardModeShadow:
-    """shadow 모드 — 전부 allow, original_action 기록"""
+    """Shadow mode allows all actions while preserving original_action."""
 
     def test_shadow_downgrades_block_to_allow(self):
         guard = Guard(mode="shadow", tool_blocklist=["dangerous"])
@@ -378,7 +378,7 @@ class TestGuardModeShadow:
         assert len(warned) == 0
 
     def test_shadow_after_tool_still_redacts(self):
-        """shadow여도 after_tool의 PII redact는 강제"""
+        """PII redaction in after_tool still applies even in shadow mode."""
         guard = Guard(mode="shadow", pii_action="block")
         d = guard.after_tool("search", "Found: admin@secret.com")
         assert d.action == "redact_result"

@@ -18,7 +18,7 @@ class AuditLogger:
         self._output = output
         self._store_raw = store_raw
         if store_raw:
-            warnings.warn("store_raw=True: 원문이 로그에 포함됩니다. 민감정보 노출 위험이 있습니다.",
+            warnings.warn("store_raw=True: raw content will be written to logs and may expose sensitive data.",
                          UserWarning, stacklevel=2)
 
     def log_scan(self, result: ScanResult, trace_id: str) -> None:

@@ -138,7 +138,7 @@ class Scanner:
             A ``ScanResult`` instance.
         """
         if source_type not in _VALID_SOURCE_TYPES:
-            raise ValueError(f"유효하지 않은 source_type: {source_type!r}")
+            raise ValueError(f"Invalid source_type: {source_type!r}")
 
         findings: list[Finding] = []
 
@@ -200,7 +200,7 @@ class Scanner:
                     Finding(
                         pattern_id="css_hidden_text",
                         severity="high",
-                        description="CSS로 숨겨진 텍스트에서 인젝션 문구 탐지",
+                        description="Detected injection phrases inside CSS-hidden text",
                         location=f"style={style_attr!r}",
                     )
                 )
@@ -217,7 +217,7 @@ class Scanner:
                     Finding(
                         pattern_id="html_comment_injection",
                         severity="medium",
-                        description="HTML 주석에서 인젝션 문구 탐지",
+                        description="Detected injection phrases inside HTML comments",
                         location="html_comment",
                     )
                 )
@@ -234,7 +234,7 @@ class Scanner:
                     Finding(
                         pattern_id="metadata_injection",
                         severity="medium",
-                        description="HTML 메타데이터 속성에서 인젝션 문구 탐지",
+                        description="Detected injection phrases inside HTML metadata attributes",
                         location="metadata_attr",
                     )
                 )
@@ -251,7 +251,7 @@ class Scanner:
                     Finding(
                         pattern_id="markdown_link_payload",
                         severity="medium",
-                        description="마크다운 링크 텍스트에서 인젝션 문구 탐지",
+                        description="Detected injection phrases inside markdown link text",
                         location="markdown_link",
                     )
                 )
@@ -267,7 +267,7 @@ class Scanner:
                     Finding(
                         pattern_id="prompt_injection_keywords",
                         severity="high",
-                        description="프롬프트 인젝션 키워드 탐지",
+                        description="Detected prompt injection keywords",
                         location="content_body",
                     )
                 )
@@ -291,7 +291,7 @@ class Scanner:
                     Finding(
                         pattern_id="base64_encoded_instruction",
                         severity="high",
-                        description="Base64 인코딩된 인젝션 명령 탐지",
+                        description="Detected base64-encoded injection instructions",
                         location="base64_block",
                     )
                 )
@@ -307,7 +307,7 @@ class Scanner:
                 Finding(
                     pattern_id="invisible_unicode",
                     severity="low",
-                    description=f"보이지 않는 유니코드 문자 {count}개 탐지",
+                    description=f"Detected {count} invisible Unicode character(s)",
                     location="content_body",
                 )
             ]
@@ -322,7 +322,7 @@ class Scanner:
                 Finding(
                     pattern_id="role_override_attempt",
                     severity="medium",
-                    description="역할 오버라이드 시도 탐지",
+                    description="Detected a role override attempt",
                     location="content_body",
                 )
             )

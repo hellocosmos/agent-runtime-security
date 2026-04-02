@@ -1,4 +1,4 @@
-"""정책 파일 로드 테스트"""
+"""Tests for policy file loading."""
 import json
 import pytest
 from asr.config import load_policy_file
@@ -50,7 +50,7 @@ class TestLoadPolicyFileErrors:
     def test_unsupported_extension(self, tmp_path):
         p = tmp_path / "policy.toml"
         p.write_text("")
-        with pytest.raises(ValueError, match="지원하지 않는 파일 확장자"):
+        with pytest.raises(ValueError, match="Unsupported file extension"):
             load_policy_file(str(p))
 
     def test_empty_file_json(self, tmp_path):
@@ -62,19 +62,19 @@ class TestLoadPolicyFileErrors:
     def test_non_dict_json(self, tmp_path):
         p = tmp_path / "bad.json"
         p.write_text("[]")
-        with pytest.raises(ValueError, match="최상위가 mapping"):
+        with pytest.raises(ValueError, match="top level"):
             load_policy_file(str(p))
 
     def test_non_dict_yaml(self, tmp_path):
         p = tmp_path / "bad.yaml"
         p.write_text("- item1\n- item2\n")
-        with pytest.raises(ValueError, match="최상위가 mapping"):
+        with pytest.raises(ValueError, match="top level"):
             load_policy_file(str(p))
 
     def test_null_yaml(self, tmp_path):
         p = tmp_path / "null.yaml"
         p.write_text("")
-        with pytest.raises(ValueError, match="최상위가 mapping"):
+        with pytest.raises(ValueError, match="top level"):
             load_policy_file(str(p))
 
     def test_file_not_found(self):
@@ -131,7 +131,7 @@ class TestGuardFromConfigValidation:
             Guard.from_config({"version": 2})
 
     def test_unknown_key(self):
-        with pytest.raises(ValueError, match="알 수 없는 정책 필드"):
+        with pytest.raises(ValueError, match="Unknown policy field"):
             Guard.from_config({"version": 1, "block_gress": True})
 
     def test_invalid_mode(self):

@@ -1,4 +1,4 @@
-"""mcp_guard 데코레이터 테스트"""
+"""Tests for the mcp_guard decorator."""
 import pytest
 from mcp.server.fastmcp.exceptions import ToolError
 
@@ -8,7 +8,7 @@ from asr.mcp import mcp_guard
 
 
 class TestMcpGuardBlocking:
-    """before_tool에서 block 판정 시 ToolError 발생"""
+    """ToolError should be raised when before_tool blocks."""
 
     async def test_blocked_tool_raises_tool_error(self):
         guard = Guard(tool_blocklist=["dangerous_tool"])
@@ -65,7 +65,7 @@ class TestMcpGuardBlocking:
 
 
 class TestMcpGuardSyncCheck:
-    """sync 함수에 mcp_guard를 적용하면 TypeError"""
+    """Applying mcp_guard to a sync function should raise TypeError."""
 
     def test_sync_handler_raises_type_error(self):
         guard = Guard(default_action="allow")
@@ -77,7 +77,7 @@ class TestMcpGuardSyncCheck:
 
 
 class TestMcpGuardRedaction:
-    """after_tool에서 PII redaction"""
+    """PII redaction after tool execution."""
 
     async def test_result_pii_redacted_on_block_action(self):
         guard = Guard(pii_action="block")
@@ -91,7 +91,7 @@ class TestMcpGuardRedaction:
         assert "[EMAIL]" in result
 
     async def test_result_pii_redacted_on_warn_action(self):
-        """pii_action=warn에서도 MCP 응답은 마스킹"""
+        """MCP responses should still be redacted when pii_action=warn."""
         guard = Guard(pii_action="warn")
 
         @mcp_guard(guard)
@@ -113,7 +113,7 @@ class TestMcpGuardRedaction:
 
 
 class TestMcpGuardAudit:
-    """audit 자동 기록"""
+    """Automatic audit logging."""
 
     async def test_audit_logs_before_and_after(self):
         events = []
@@ -158,7 +158,7 @@ class TestMcpGuardAudit:
 
 
 class TestMcpGuardOptions:
-    """tool_name, capabilities, trace_id_getter 옵션"""
+    """Options for tool_name, capabilities, and trace_id_getter."""
 
     async def test_custom_tool_name(self):
         events = []
@@ -215,7 +215,7 @@ class TestMcpGuardOptions:
 
 
 class TestMcpGuardErrorPropagation:
-    """handler 내부 예외는 그대로 propagate"""
+    """Handler exceptions should propagate unchanged."""
 
     async def test_handler_exception_propagates(self):
         guard = Guard(default_action="allow")
@@ -228,7 +228,7 @@ class TestMcpGuardErrorPropagation:
             await buggy_tool(x="test")
 
     async def test_handler_exception_not_caught_as_block(self):
-        """handler ValueError는 ToolError와 구분됨"""
+        """Handler ValueError should remain distinct from ToolError."""
         guard = Guard(default_action="allow")
 
         @mcp_guard(guard)

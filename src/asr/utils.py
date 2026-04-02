@@ -12,8 +12,8 @@ def extract_text_from_pdf(path: str) -> str:
     import pymupdf
   except ImportError:
     raise ImportError(
-        "PDF 텍스트 추출에는 pymupdf가 필요합니다. "
-        "pip install agent-runtime-security[pdf] 로 설치하세요."
+        "pymupdf is required for PDF text extraction. "
+        "Install it with: pip install agent-runtime-security[pdf]"
     )
   doc = pymupdf.open(path)
   text_parts = []

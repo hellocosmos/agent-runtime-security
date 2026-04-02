@@ -282,15 +282,15 @@ class Guard:
     def _validate_config(cls, config: dict) -> None:
         """Validate a policy config dictionary."""
         if "version" not in config:
-            raise ValueError("정책 파일에 'version' 필드가 필요합니다")
+            raise ValueError("Policy files must include a 'version' field")
         if config["version"] != 1:
             raise ValueError(
-                f"지원하지 않는 version: {config['version']}. 현재 version: 1만 지원합니다"
+                f"Unsupported version: {config['version']}. Only version 1 is supported"
             )
 
         unknown = set(config.keys()) - cls._KNOWN_CONFIG_KEYS
         if unknown:
-            raise ValueError(f"알 수 없는 정책 필드: {', '.join(sorted(unknown))}")
+            raise ValueError(f"Unknown policy field(s): {', '.join(sorted(unknown))}")
 
         _VALID_VALUES = {
             "mode": ("enforce", "warn", "shadow"),
@@ -300,29 +300,29 @@ class Guard:
         for field, valid in _VALID_VALUES.items():
             if field in config and config[field] not in valid:
                 raise ValueError(
-                    f"'{field}' 값이 올바르지 않습니다: {config[field]!r}. "
-                    f"허용: {', '.join(valid)}"
+                    f"Invalid value for '{field}': {config[field]!r}. "
+                    f"Allowed: {', '.join(valid)}"
                 )
 
         for field in ("domain_allowlist", "file_path_allowlist", "tool_blocklist"):
             if field in config:
                 val = config[field]
                 if not isinstance(val, list) or not all(isinstance(x, str) for x in val):
-                    raise ValueError(f"'{field}'는 문자열 리스트여야 합니다")
+                    raise ValueError(f"'{field}' must be a list of strings")
 
         if "block_egress" in config and not isinstance(config["block_egress"], bool):
-            raise ValueError("'block_egress'는 bool이어야 합니다")
+            raise ValueError("'block_egress' must be a bool")
 
         if "capability_policy" in config:
             cp = config["capability_policy"]
             if not isinstance(cp, dict):
-                raise ValueError("'capability_policy'는 dict여야 합니다")
+                raise ValueError("'capability_policy' must be a dict")
             valid_actions = ("allow", "warn", "block")
             for k, v in cp.items():
                 if v not in valid_actions:
                     raise ValueError(
-                        f"'capability_policy' 값이 올바르지 않습니다: "
-                        f"{k}={v!r}. 허용: {', '.join(valid_actions)}"
+                        f"Invalid 'capability_policy' value: "
+                        f"{k}={v!r}. Allowed: {', '.join(valid_actions)}"
                     )
 
     # ------------------------------------------------------------------
