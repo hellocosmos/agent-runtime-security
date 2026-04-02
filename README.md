@@ -36,6 +36,12 @@
 pip install agent-runtime-security
 ```
 
+MCP 어댑터가 필요한 경우:
+
+```bash
+pip install agent-runtime-security[mcp]
+```
+
 PDF 지원이 필요한 경우:
 
 ```bash
@@ -82,9 +88,55 @@ audit.log_scan(result, trace_id="req-001")
 audit.log_guard(decision, trace_id="req-001")
 ```
 
+### 운영 모드 (Shadow Mode)
+
+프로덕션 환경에서 정책을 단계적으로 배포할 수 있습니다:
+
+```python
+# 1단계: shadow — 차단 없이 관찰만 (original_action으로 기록)
+guard = Guard(mode="shadow", ...)
+
+# 2단계: warn — block을 warn으로 다운그레이드
+guard = Guard(mode="warn", ...)
+
+# 3단계: enforce — 정책대로 실제 차단 (기본값)
+guard = Guard(mode="enforce", ...)
+
+# shadow/warn에서도 PII redact는 항상 강제됩니다
+decision = guard.before_tool("http_post", {"url": "https://evil.com"})
+print(decision.action)            # "allow" (shadow에서)
+print(decision.original_action)   # "block" (원래 판정)
+print(decision.mode)              # "shadow"
+```
+
+### MCP 서버 통합
+
+MCP tool handler에 Guard 정책을 적용합니다:
+
+```python
+from asr import Guard, AuditLogger
+from asr.mcp import mcp_guard
+
+guard = Guard(mode="shadow", domain_allowlist=["api.internal.com"], block_egress=True)
+audit = AuditLogger(output="logs/audit.jsonl")
+
+@server.tool()
+@mcp_guard(guard, audit=audit, capabilities=["network_send"])
+async def send_email(to: str, subject: str, body: str) -> str:
+    # Guard가 정책을 평가하고, 차단 시 MCP 에러로 반환
+    # PII가 결과에 있으면 자동 마스킹
+    return await email_service.send(to, subject, body)
+```
+
 ## 정책 설정
 
-Guard는 6가지 정책을 지원합니다:
+Guard는 6가지 정책과 3가지 운영 모드를 지원합니다:
+
+| 모드 | 설명 |
+|------|------|
+| `enforce` (기본) | 정책 결과 그대로 적용합니다 |
+| `warn` | block을 warn으로 다운그레이드합니다 (점진 전환) |
+| `shadow` | 전부 allow, 원래 판정은 로그에만 기록합니다 (관찰 전용) |
 
 | 정책 | 설명 |
 |------|------|
