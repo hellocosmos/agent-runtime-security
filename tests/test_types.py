@@ -61,6 +61,24 @@ class TestBeforeToolDecision:
         )
         assert d.capabilities == []
 
+    def test_original_action_and_mode_fields(self):
+        d = BeforeToolDecision(
+            action="warn", reason="domain_not_allowed", policy_id="domain_allowlist",
+            severity="high", tool_name="http_post",
+            original_action="block", mode="warn",
+        )
+        assert d.action == "warn"
+        assert d.original_action == "block"
+        assert d.mode == "warn"
+
+    def test_original_action_defaults_empty(self):
+        d = BeforeToolDecision(
+            action="block", reason="test", policy_id="test",
+            severity="high", tool_name="test",
+        )
+        assert d.original_action == ""
+        assert d.mode == "enforce"
+
 
 class TestAfterToolDecision:
     def test_create_allow(self):
@@ -79,3 +97,21 @@ class TestAfterToolDecision:
         )
         assert d.action == "redact_result"
         assert d.redacted_result == "[CONTAINS PII - REDACTED]"
+
+    def test_original_action_and_mode_fields(self):
+        d = AfterToolDecision(
+            action="redact_result", reason="pii_in_result", policy_id="pii_detection",
+            severity="high", tool_name="search",
+            redacted_result="[REDACTED]",
+            original_action="redact_result", mode="shadow",
+        )
+        assert d.original_action == "redact_result"
+        assert d.mode == "shadow"
+
+    def test_original_action_defaults_empty(self):
+        d = AfterToolDecision(
+            action="allow", reason="test", policy_id="test",
+            severity="low", tool_name="test",
+        )
+        assert d.original_action == ""
+        assert d.mode == "enforce"
