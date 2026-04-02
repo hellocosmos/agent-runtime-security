@@ -1,4 +1,4 @@
-"""PII 탐지 및 마스킹"""
+"""PII detection and redaction."""
 from __future__ import annotations
 import re
 

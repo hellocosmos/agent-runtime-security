@@ -1,11 +1,11 @@
-"""ARS MCP 예제 서버 — Guard 정책 데모
+"""ARS MCP example server for Guard policy demos.
 
-실행: python examples/mcp_server.py
-또는: mcp dev examples/mcp_server.py
+Run with: python examples/mcp_server.py
+Or:       mcp dev examples/mcp_server.py
 
-데모 시나리오:
-  1. mode: shadow (기본) — 모든 호출 허용, audit에 original_action 기록
-  2. policy.yaml에서 mode: enforce로 변경 후 재실행 — 정책 실제 적용
+Demo flow:
+  1. mode: shadow (default) - allow all calls and record original_action in audit
+  2. change policy.yaml to mode: enforce and rerun - apply policies for real
 """
 from pathlib import Path
 
@@ -14,50 +14,51 @@ from mcp.server.fastmcp import FastMCP
 from asr import Guard, AuditLogger
 from asr.mcp import mcp_guard
 
-# 정책 파일에서 Guard 생성
+# Build Guard from the policy file.
 POLICY_PATH = Path(__file__).parent / "policy.yaml"
 guard = Guard.from_policy_file(str(POLICY_PATH))
 audit = AuditLogger(output="stdout")
 
-mcp = FastMCP("ARS 데모 서버")
+mcp = FastMCP("ARS Demo Server")
 
 
 @mcp.tool()
 @mcp_guard(guard, audit=audit, capabilities=["network_send"])
 async def send_email(to: str, subject: str, body: str) -> str:
-    """이메일을 전송합니다 (시뮬레이션)
+    """Send an email (simulated).
 
-    egress 정책: domain_allowlist에 없는 도메인으로의 전송은 차단됩니다.
-    shadow 모드에서는 허용하되 audit에 original_action=block이 기록됩니다.
+    Egress policy blocks destinations outside the domain allowlist.
+    In shadow mode the call is allowed, but audit keeps original_action=block.
     """
-    return f"이메일 전송 완료: to={to}, subject={subject}"
+    return f"Email sent: to={to}, subject={subject}"
 
 
 @mcp.tool()
 @mcp_guard(guard, audit=audit, capabilities=["file_read"])
 async def read_file(path: str) -> str:
-    """파일을 읽습니다 (시뮬레이션)
+    """Read a file (simulated).
 
-    file_path_allowlist에 포함된 경로만 허용됩니다.
-    /etc/passwd 같은 민감 경로는 차단됩니다.
+    Only paths inside file_path_allowlist are allowed.
+    Sensitive paths such as /etc/passwd are blocked.
     """
-    return f"파일 내용 (시뮬레이션): path={path}, data=sample content"
+    return f"File contents (simulated): path={path}, data=sample content"
 
 
 @mcp.tool()
 @mcp_guard(guard, audit=audit)
 async def search(query: str) -> str:
-    """데이터를 검색합니다 (시뮬레이션)
+    """Search data (simulated).
 
-    검색 결과에 PII(이메일, API 키 등)가 포함되면 자동으로 마스킹됩니다.
-    pii_action=block이면 [EMAIL], [API_KEY] 등으로 치환됩니다.
+    Search results are automatically redacted when they contain PII such as
+    emails or API keys. With pii_action=block they are replaced with labels
+    such as [EMAIL] and [API_KEY].
     """
-    # 의도적으로 PII가 포함된 시뮬레이션 결과
+    # Intentionally include PII in the simulated result.
     return (
-        f"검색 결과 ({query}):\n"
-        f"  - 담당자: admin@secret.com\n"
-        f"  - API 키: sk-proj-abc123def456ghi789jkl012mno345pqr678stu\n"
-        f"  - 연락처: 010-1234-5678"
+        f"Search results ({query}):\n"
+        f"  - Contact: admin@secret.com\n"
+        f"  - API key: sk-proj-abc123def456ghi789jkl012mno345pqr678stu\n"
+        f"  - Phone: 010-1234-5678"
     )
 
 

@@ -1,10 +1,12 @@
-"""유틸리티 함수"""
+"""Utility helpers."""
 from __future__ import annotations
 
 
 def extract_text_from_pdf(path: str) -> str:
-  """PDF 파일에서 텍스트를 추출한다.
-  pymupdf가 설치되어 있어야 한다: pip install agent-runtime-security[pdf]
+  """Extract text from a PDF file.
+
+  Requires ``pymupdf``:
+    pip install agent-runtime-security[pdf]
   """
   try:
     import pymupdf

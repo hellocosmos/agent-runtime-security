@@ -1,4 +1,7 @@
-"""정책 평가 함수 — 각 정책은 dict | None을 반환. None이면 비해당."""
+"""Policy evaluators.
+
+Each evaluator returns a result dictionary or ``None`` when it does not apply.
+"""
 from __future__ import annotations
 import fnmatch
 import ipaddress
@@ -27,7 +30,7 @@ def evaluate_egress(tool_name: str, args: dict, *, domain_allowlist: list[str], 
         if not _domain_matches(hostname, domain_allowlist):
             return {"action": "block", "reason": "domain_not_allowed", "policy_id": "domain_allowlist", "severity": "high"}
         return None
-    # URL이 없는 경우 이메일 수신자 필드 확인
+    # If there is no URL, inspect email-recipient fields instead.
     email_dest = _extract_email_destination(args)
     if email_dest is not None:
         email_domain = email_dest.split("@")[1] if "@" in email_dest else None
@@ -41,12 +44,12 @@ def evaluate_file_path(tool_name: str, args: dict, *, allowlist: list[str]) -> d
     path_str = _extract_path(args)
     if path_str is None:
         return None
-    # 민감 경로 우선 검사
+    # Sensitive path patterns take priority.
     sensitive_patterns = ["**/.ssh/*", "**/.env", "**/.env.*", "**/credentials*", "**/secrets*"]
     for pattern in sensitive_patterns:
         if fnmatch.fnmatch(path_str, pattern):
             return {"action": "block", "reason": "sensitive_path", "policy_id": "file_path_allowlist", "severity": "high"}
-    # 경로 정규화 후 자식 디렉토리인지 확인
+    # Normalize the path, then verify it is inside an allowed directory.
     resolved = pathlib.Path(path_str).resolve()
     for allowed in allowlist:
         allowed_resolved = pathlib.Path(allowed).resolve()
@@ -89,16 +92,16 @@ def evaluate_unknown_tool(*, default: str) -> dict:
 
 
 def has_url(args: dict) -> bool:
-    """args에 URL이 있는지 확인 (Guard에서 사용)"""
+    """Return whether ``args`` contains a URL field used by Guard."""
     return _extract_url(args) is not None
 
 
 def has_email_destination(args: dict) -> bool:
-    """args에 이메일 수신자가 있는지 확인 (Guard에서 사용)"""
+    """Return whether ``args`` contains an email destination used by Guard."""
     return _extract_email_destination(args) is not None
 
 
-# --- 내부 유틸리티 ---
+# --- Internal helpers ---
 
 def _extract_url(args: dict) -> str | None:
     for key in ("url", "endpoint", "uri", "href", "target"):
@@ -134,7 +137,7 @@ def _domain_matches(hostname: str, allowlist: list[str]) -> bool:
     return False
 
 def _extract_email_destination(args: dict) -> str | None:
-    """수신자 관련 필드에서 이메일 주소를 추출"""
+    """Extract an email address from recipient-related fields."""
     for key in ("to", "recipient", "recipients"):
         if key in args:
             val = args[key]
@@ -145,7 +148,7 @@ def _extract_email_destination(args: dict) -> str | None:
     return None
 
 def _args_to_text(args: dict) -> str:
-    # PII 검사 시 수신자 관련 필드는 건너뜀 (정상적인 이메일 to 필드가 PII 차단을 유발하지 않도록)
+    # Skip recipient fields so normal email destinations do not trigger PII blocking.
     _RECIPIENT_KEYS = {"to", "from", "recipient", "recipients", "cc", "bcc"}
     parts = []
     for key, value in args.items():

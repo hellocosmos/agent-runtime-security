@@ -1,4 +1,4 @@
-"""Guard 모듈 — before_tool/after_tool 정책 평가 및 protect 데코레이터"""
+"""Guard module with before_tool/after_tool policy checks and decorators."""
 from __future__ import annotations
 
 import functools
@@ -22,17 +22,17 @@ from asr.policies import (
 from asr.types import AfterToolDecision, BeforeToolDecision
 
 
-# --- 내부 유틸: args에 파일 경로 키가 있는지 확인 ---
+# --- Internal helper: detect file path keys in args ---
 _PATH_KEYS = ("path", "file_path", "filepath", "file", "filename")
 
 
 def _has_path(args: dict) -> bool:
-    """args에 파일 경로 키가 있는지 확인"""
+    """Return whether ``args`` contains a file path key."""
     return any(k in args and isinstance(args[k], str) for k in _PATH_KEYS)
 
 
 class BlockedToolError(Exception):
-    """Guard가 도구 호출을 차단했을 때 발생하는 예외"""
+    """Raised when Guard blocks a tool invocation."""
 
     def __init__(self, decision: BeforeToolDecision):
         self.decision = decision
@@ -40,15 +40,15 @@ class BlockedToolError(Exception):
 
 
 class Guard:
-    """AI 에이전트 도구 호출 가드
+    """Guard for AI agent tool invocations.
 
-    정책 평가 순서:
-    1. tool_blocklist — 최우선
-    2. egress (domain_allowlist) — 세부 정책
-    3. file_path_allowlist — 세부 정책
-    4. pii_detection — 세부 정책
-    5. capability_policy — 진짜 fallback (세부 정책이 하나도 해당 안 될 때만)
-    6. default_action — 최종 fallback
+    Policy evaluation order:
+    1. tool_blocklist - highest priority
+    2. egress (domain_allowlist) - specific policy
+    3. file_path_allowlist - specific policy
+    4. pii_detection - specific policy
+    5. capability_policy - true fallback, only when no specific policy matched
+    6. default_action - final fallback
     """
 
     def __init__(
@@ -89,7 +89,7 @@ class Guard:
         context: dict | None = None,
         capabilities: list[str] | None = None,
     ) -> BeforeToolDecision:
-        """도구 호출 전 정책 평가"""
+        """Evaluate policies before a tool call."""
         caps = capabilities or []
         redacted = self._redact_args(args)
 
@@ -110,18 +110,18 @@ class Guard:
             self._fire_callbacks(d)
             return d
 
-        # 1. 블록리스트 — 최우선
+        # 1. Blocklist - highest priority.
         r = evaluate_tool_blocklist(name, args, blocklist=self._tool_blocklist)
         if r is not None:
             return _decision(r)
 
-        # 2~4. 세부 정책 (egress / file_path / pii)
-        # matched_any_specific: 세부 정책 중 하나라도 "해당"되었는지 추적
-        # worst_result: block이 아닌 결과 중 가장 제한적인 것 (block은 즉시 반환)
+        # 2-4. Specific policies (egress / file_path / pii)
+        # matched_any_specific tracks whether any specific policy applied.
+        # worst_result keeps the strictest non-block result; blocks return immediately.
         matched_any_specific = False
         worst_result = None
 
-        # 2. Egress 정책
+        # 2. Egress policy
         if self._block_egress and (has_url(args) or has_email_destination(args)):
             matched_any_specific = True
             r = evaluate_egress(
@@ -134,7 +134,7 @@ class Guard:
                     return _decision(r)
                 worst_result = r
 
-        # 3. 파일 경로 정책
+        # 3. File path policy
         if self._file_path_allowlist and _has_path(args):
             matched_any_specific = True
             r = evaluate_file_path(name, args, allowlist=self._file_path_allowlist)
@@ -144,7 +144,7 @@ class Guard:
                 if worst_result is None:
                     worst_result = r
 
-        # 4. PII 정책
+        # 4. PII policy
         if self._pii_action != "off":
             r = evaluate_pii(name, args, pii_action=self._pii_action)
             if r is not None:
@@ -154,7 +154,7 @@ class Guard:
                 if worst_result is None:
                     worst_result = r
 
-        # 세부 정책이 하나라도 해당되었으면 → capability 건너뛰고 결과 반환
+        # If any specific policy matched, skip capability fallback and return now.
         if matched_any_specific:
             if worst_result is not None:
                 return _decision(worst_result)
@@ -172,13 +172,13 @@ class Guard:
             self._fire_callbacks(d)
             return d
 
-        # 5. Capability 정책 — 진짜 fallback
+        # 5. Capability policy - true fallback.
         if caps and self._capability_policy:
             r = evaluate_capability(capabilities=caps, policy=self._capability_policy)
             if r is not None:
                 return _decision(r)
 
-        # 6. 최종 fallback — default_action
+        # 6. Final fallback - default_action.
         r = evaluate_unknown_tool(default=self._default_action)
         return _decision(r)
 
@@ -191,7 +191,7 @@ class Guard:
         result: Any,
         context: dict | None = None,
     ) -> AfterToolDecision:
-        """도구 호출 후 결과 PII 검사 및 마스킹"""
+        """Inspect and redact PII in the tool result."""
         if self._pii_action == "off":
             return AfterToolDecision(
                 action="allow",
@@ -217,7 +217,7 @@ class Guard:
                 mode=self._mode,
             )
 
-        # PII 발견
+        # PII found.
         redacted = self._redact_result(result)
 
         if self._pii_action == "block":
@@ -245,7 +245,7 @@ class Guard:
         )
 
     # ------------------------------------------------------------------
-    # classmethod: 정책 파일에서 생성
+    # Classmethods for policy-file construction.
     # ------------------------------------------------------------------
     _KNOWN_CONFIG_KEYS = {
         "version", "mode", "domain_allowlist", "file_path_allowlist",
@@ -255,11 +255,11 @@ class Guard:
 
     @classmethod
     def from_config(cls, config: dict, **overrides) -> "Guard":
-        """검증된 config dict에서 Guard를 생성
+        """Create a Guard from a validated config dictionary.
 
         Args:
-            config: 정책 설정 dict (version 필수)
-            **overrides: Guard 생성자 파라미터 override (on_block, on_warn, mode 등)
+            config: Policy configuration dictionary. ``version`` is required.
+            **overrides: Guard constructor overrides such as ``on_block`` or ``mode``.
         """
         cls._validate_config(config)
         guard_params = {k: v for k, v in config.items() if k != "version"}
@@ -268,11 +268,11 @@ class Guard:
 
     @classmethod
     def from_policy_file(cls, path: str, **overrides) -> "Guard":
-        """정책 파일에서 Guard를 생성 (편의 API)
+        """Create a Guard from a policy file.
 
         Args:
-            path: 정책 파일 경로 (.json, .yaml, .yml)
-            **overrides: Guard 생성자 파라미터 override
+            path: Policy file path (``.json``, ``.yaml``, ``.yml``).
+            **overrides: Guard constructor overrides.
         """
         from asr.config import load_policy_file
         config = load_policy_file(path)
@@ -280,7 +280,7 @@ class Guard:
 
     @classmethod
     def _validate_config(cls, config: dict) -> None:
-        """정책 config를 검증"""
+        """Validate a policy config dictionary."""
         if "version" not in config:
             raise ValueError("정책 파일에 'version' 필드가 필요합니다")
         if config["version"] != 1:
@@ -326,7 +326,7 @@ class Guard:
                     )
 
     # ------------------------------------------------------------------
-    # protect 데코레이터
+    # protect decorator
     # ------------------------------------------------------------------
     def protect(
         self,
@@ -334,9 +334,9 @@ class Guard:
         *,
         capabilities: list[str] | None = None,
     ):
-        """도구 함수를 Guard로 보호하는 데코레이터
+        """Decorator that protects a tool function with Guard.
 
-        사용법:
+        Examples:
             @guard.protect
             def my_tool(...): ...
 
@@ -344,12 +344,12 @@ class Guard:
             def run_cmd(...): ...
         """
         if func is None:
-            # @guard.protect(capabilities=["shell_exec"]) 형태
+            # Support @guard.protect(capabilities=["shell_exec"]).
             return functools.partial(self.protect, capabilities=capabilities)
 
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            # positional args를 파라미터 이름에 매핑
+            # Map positional arguments to parameter names.
             sig = inspect.signature(func)
             try:
                 bound = sig.bind_partial(*args, **kwargs)
@@ -358,17 +358,17 @@ class Guard:
             except TypeError:
                 named_args = kwargs.copy()
 
-            # before_tool 평가
+            # Evaluate before_tool.
             tool_name = func.__name__
             decision = self.before_tool(tool_name, named_args, capabilities=capabilities)
 
             if decision.action == "block":
                 raise BlockedToolError(decision)
 
-            # 함수 실행
+            # Execute the wrapped function.
             result = func(*args, **kwargs)
 
-            # after_tool 평가
+            # Evaluate after_tool.
             after_decision = self.after_tool(tool_name, result)
             if after_decision.action == "redact_result":
                 return after_decision.redacted_result
@@ -378,10 +378,10 @@ class Guard:
         return wrapper
 
     # ------------------------------------------------------------------
-    # 내부 유틸리티
+    # Internal utilities
     # ------------------------------------------------------------------
     def _apply_mode(self, original_action: str) -> str:
-        """모드에 따라 effective_action 반환"""
+        """Return the effective action after applying the current mode."""
         if self._mode == "enforce":
             return original_action
         if self._mode == "warn":
@@ -390,7 +390,7 @@ class Guard:
         return "allow"
 
     def _redact_args(self, args: dict) -> dict:
-        """args dict의 문자열 값에서 PII를 마스킹"""
+        """Redact PII from string values inside an args dictionary."""
         redacted = {}
         for key, value in args.items():
             if isinstance(value, str):
@@ -402,7 +402,7 @@ class Guard:
         return redacted
 
     def _fire_callbacks(self, decision: BeforeToolDecision) -> None:
-        """block/warn 콜백 호출"""
+        """Invoke block or warn callbacks when configured."""
         if decision.action == "block" and self._on_block:
             self._on_block(decision)
         elif decision.action == "warn" and self._on_warn:
@@ -410,7 +410,7 @@ class Guard:
 
     @staticmethod
     def _extract_text(result: Any) -> str:
-        """결과에서 텍스트를 재귀적으로 추출 (PII 검사용, 중첩 dict/list 포함)"""
+        """Recursively extract text from a result for PII inspection."""
         if isinstance(result, str):
             return result
         if isinstance(result, dict):
@@ -423,7 +423,7 @@ class Guard:
         return str(result) if result is not None else ""
 
     def _redact_result(self, result: Any) -> Any:
-        """결과 타입을 보존하면서 PII 마스킹 — 중첩 dict/list도 재귀적으로 처리"""
+        """Redact PII while preserving the original result type."""
         if isinstance(result, str):
             return redact_pii(result)
         if isinstance(result, dict):

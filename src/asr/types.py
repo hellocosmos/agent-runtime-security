@@ -1,4 +1,4 @@
-"""공유 dataclass 정의"""
+"""Shared dataclass definitions."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
 class Finding:
-    """스캐너 탐지 항목"""
+    """Single scanner finding."""
     pattern_id: str
     severity: str  # "low" | "medium" | "high"
     description: str
@@ -16,7 +16,7 @@ class Finding:
 
 @dataclass(frozen=True)
 class ScanResult:
-    """스캐너 스캔 결과"""
+    """Result returned by Scanner.scan."""
     score: float  # 0.0 ~ 1.0
     severity: str  # "low" | "medium" | "high"
     findings: list[Finding]
@@ -28,26 +28,26 @@ class ScanResult:
 
 @dataclass(frozen=True)
 class BeforeToolDecision:
-    """Guard before_tool 판정 결과"""
-    action: str  # "allow" | "warn" | "block" — 실제 적용 액션 (모드에 따라 원본과 다를 수 있음)
+    """Decision returned by Guard.before_tool."""
+    action: str  # "allow" | "warn" | "block" - effective action after mode handling
     reason: str
     policy_id: str
     severity: str  # "low" | "medium" | "high"
     tool_name: str
     redacted_args: dict = field(default_factory=dict)
     capabilities: list[str] = field(default_factory=list)
-    original_action: str = ""  # 정책 원본 판정 (모드 적용 전)
+    original_action: str = ""  # original policy action before mode handling
     mode: str = "enforce"  # "enforce" | "warn" | "shadow"
 
 
 @dataclass(frozen=True)
 class AfterToolDecision:
-    """Guard after_tool 판정 결과"""
+    """Decision returned by Guard.after_tool."""
     action: str  # "allow" | "warn" | "redact_result"
     reason: str
     policy_id: str
     severity: str  # "low" | "medium" | "high"
     tool_name: str
     redacted_result: object | None = None
-    original_action: str = ""  # 정책 원본 판정 (after_tool은 모드 영향 없음)
+    original_action: str = ""  # original policy action; after_tool is not mode-shifted
     mode: str = "enforce"  # "enforce" | "warn" | "shadow"

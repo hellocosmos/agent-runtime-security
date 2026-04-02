@@ -1,4 +1,4 @@
-"""Agent Runtime Security — AI 에이전트 보안 SDK"""
+"""Agent Runtime Security - security SDK for tool-using AI agents."""
 
 __version__ = "0.1.0"
 

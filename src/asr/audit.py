@@ -1,4 +1,4 @@
-"""감사 로그 모듈 — 전 구간 구조화 JSONL 기록"""
+"""Audit logging module for structured JSONL events."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from asr.types import BeforeToolDecision, AfterToolDecision, ScanResult
 
 
 class AuditLogger:
-    """JSONL 구조화 감사 로거"""
+    """Structured JSONL audit logger."""
 
     def __init__(self, output: str | Callable[[dict], Any] = "stdout", store_raw: bool = False):
         self._output = output
@@ -36,7 +36,7 @@ class AuditLogger:
             event = self._base_event(trace_id, "guard_before", "guard")
             event.update({
                 "tool_name": decision.tool_name, "capabilities": decision.capabilities,
-                "decision": decision.action,  # 기존 필드 유지 (하위호환)
+                "decision": decision.action,  # Keep the legacy field for backward compatibility.
                 "effective_action": decision.action,
                 "original_action": decision.original_action or decision.action,
                 "mode": decision.mode,
@@ -48,7 +48,7 @@ class AuditLogger:
             event = self._base_event(trace_id, "guard_after", "guard")
             event.update({
                 "tool_name": decision.tool_name,
-                "decision": decision.action,  # 기존 필드 유지 (하위호환)
+                "decision": decision.action,  # Keep the legacy field for backward compatibility.
                 "effective_action": decision.action,
                 "original_action": decision.original_action or decision.action,
                 "mode": decision.mode,

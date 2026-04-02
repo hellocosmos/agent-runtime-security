@@ -1,4 +1,4 @@
-"""정책 파일 로드 — JSON 기본, YAML 선택적 지원"""
+"""Policy-file loader with JSON by default and optional YAML support."""
 from __future__ import annotations
 
 import json
@@ -6,18 +6,18 @@ from pathlib import Path
 
 
 def load_policy_file(path: str) -> dict:
-    """정책 파일을 로드하여 dict로 반환
+    """Load a policy file and return it as a dictionary.
 
     Args:
-        path: 정책 파일 경로 (.json, .yaml, .yml)
+        path: Policy file path (``.json``, ``.yaml``, ``.yml``).
 
     Returns:
-        정책 설정 dict
+        Parsed policy configuration.
 
     Raises:
-        ValueError: 지원하지 않는 확장자 또는 잘못된 파일 형식
-        FileNotFoundError: 파일이 존재하지 않음
-        ImportError: YAML 파일인데 pyyaml이 설치되지 않음
+        ValueError: Unsupported extension or invalid file shape.
+        FileNotFoundError: The file does not exist.
+        ImportError: The file is YAML but ``pyyaml`` is not installed.
     """
     file_path = Path(path)
     suffix = file_path.suffix.lower()

@@ -1,4 +1,4 @@
-"""MCP Guard 어댑터 — MCP tool handler를 Guard 정책으로 보호하는 데코레이터"""
+"""MCP adapter that protects tool handlers with Guard policies."""
 from __future__ import annotations
 
 import functools
@@ -18,17 +18,17 @@ def mcp_guard(
     capabilities: list[str] | None = None,
     trace_id_getter: Callable[..., str | None] | None = None,
 ):
-    """MCP tool handler를 Guard 정책으로 보호하는 async 데코레이터
+    """Async decorator that protects an MCP tool handler with Guard.
 
     Args:
-        guard: Guard 인스턴스
-        audit: 감사 로거. 설정 시 before/after 자동 기록
-        tool_name: Guard에 전달할 도구 이름. None이면 fn.__name__
-        capabilities: 도구의 capability 태그
-        trace_id_getter: trace_id 추출 함수(**kwargs를 받음). None이면 UUID 자동 생성
+        guard: Guard instance.
+        audit: Optional audit logger. When set, before/after events are recorded.
+        tool_name: Tool name passed to Guard. Defaults to ``fn.__name__``.
+        capabilities: Capability tags for the tool.
+        trace_id_getter: Optional function that extracts ``trace_id`` from ``**kwargs``.
     """
     def decorator(fn: Callable) -> Callable:
-        # 데코레이션 시점에 sync 함수 검사
+        # Reject sync handlers at decoration time.
         if not inspect.iscoroutinefunction(fn):
             raise TypeError(
                 f"mcp_guard requires async def tool handlers, "
@@ -39,7 +39,7 @@ def mcp_guard(
 
         @functools.wraps(fn)
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
-            # positional args를 파라미터 이름에 매핑 (guard.protect 패턴과 동일)
+            # Map positional arguments to parameter names, matching guard.protect.
             sig = inspect.signature(fn)
             try:
                 bound = sig.bind_partial(*args, **kwargs)
@@ -48,14 +48,14 @@ def mcp_guard(
             except TypeError:
                 named_args = kwargs.copy()
 
-            # trace_id 생성
+            # Generate a trace_id.
             trace_id = None
             if trace_id_getter is not None:
                 trace_id = trace_id_getter(**named_args)
             if trace_id is None:
                 trace_id = str(uuid.uuid4())
 
-            # before_tool 정책 평가
+            # Evaluate before_tool.
             decision = guard.before_tool(name, named_args, capabilities=capabilities)
 
             if audit is not None:
@@ -67,17 +67,17 @@ def mcp_guard(
                     f"'{decision.policy_id}': {decision.reason}"
                 )
 
-            # tool handler 실행
+            # Execute the tool handler.
             result = await fn(*args, **kwargs)
 
-            # after_tool 결과 PII 검사
+            # Inspect the result for PII after execution.
             after_decision = guard.after_tool(name, result)
 
             if audit is not None:
                 audit.log_guard(after_decision, trace_id=trace_id)
 
-            # PII 보호: redact_result 또는 warn이면서 마스킹 결과가 있으면 반환
-            # guard.protect보다 엄격 — warn에서도 PII가 누출되지 않도록 redacted 반환
+            # Return the redacted payload when data protection triggered.
+            # This is stricter than guard.protect and still redacts on warn.
             if after_decision.redacted_result is not None and after_decision.action in (
                 "redact_result", "warn"
             ):
@@ -90,7 +90,7 @@ def mcp_guard(
 
 
 def _raise_tool_error(message: str) -> None:
-    """MCP ToolError가 있으면 사용, 없으면 RuntimeError로 fallback"""
+    """Raise MCP ToolError when available, otherwise fall back to RuntimeError."""
     try:
         from mcp.server.fastmcp.exceptions import ToolError
         raise ToolError(message)
