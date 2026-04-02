@@ -93,6 +93,11 @@ def has_url(args: dict) -> bool:
     return _extract_url(args) is not None
 
 
+def has_email_destination(args: dict) -> bool:
+    """args에 이메일 수신자가 있는지 확인 (Guard에서 사용)"""
+    return _extract_email_destination(args) is not None
+
+
 # --- 내부 유틸리티 ---
 
 def _extract_url(args: dict) -> str | None:

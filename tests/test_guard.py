@@ -209,6 +209,51 @@ class TestProtectDecorator:
         assert some_tool() == 42
 
 
+class TestEgressEmailWiring:
+    """URL 없는 이메일 전송도 egress 정책을 타야 한다"""
+
+    def test_email_to_external_domain_warns(self):
+        """send_email(to="attacker@evil.com") → egress 정책이 warn 반환"""
+        guard = Guard(
+            domain_allowlist=["internal.com"],
+            block_egress=True,
+        )
+        d = guard.before_tool("send_email", {"to": "attacker@evil.com", "body": "hello"})
+        assert d.action == "warn"
+        assert d.policy_id == "egress_control"
+
+    def test_email_to_allowed_domain_allows(self):
+        """수신자 도메인이 allowlist에 있으면 allow"""
+        guard = Guard(
+            domain_allowlist=["internal.com"],
+            block_egress=True,
+        )
+        d = guard.before_tool("send_email", {"to": "user@internal.com", "body": "hello"})
+        assert d.action == "allow"
+
+    def test_email_egress_sets_matched_specific(self):
+        """이메일 egress가 해당되면 capability fallback을 건너뛴다"""
+        guard = Guard(
+            domain_allowlist=["internal.com"],
+            block_egress=True,
+            capability_policy={"network_send": "block"},
+        )
+        d = guard.before_tool("send_email", {"to": "user@internal.com", "body": "hello"},
+                              capabilities=["network_send"])
+        assert d.action == "allow"
+        assert d.policy_id != "capability_policy"
+
+    def test_recipients_list_external_warns(self):
+        """recipients 리스트의 외부 도메인도 egress 경고"""
+        guard = Guard(
+            domain_allowlist=["internal.com"],
+            block_egress=True,
+        )
+        d = guard.before_tool("send_email", {"recipients": ["attacker@evil.com"], "body": "hello"})
+        assert d.action == "warn"
+        assert d.policy_id == "egress_control"
+
+
 class TestCapabilityAllow:
     def test_capability_allow_respected(self):
         """capability_policy에 allow가 설정된 경우, default_action을 무시하고 allow 반환"""

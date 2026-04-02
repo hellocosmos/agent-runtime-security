@@ -13,6 +13,7 @@ from asr.policies import (
     evaluate_pii,
     evaluate_tool_blocklist,
     evaluate_unknown_tool,
+    has_email_destination,
     has_url,
 )
 from asr.types import AfterToolDecision, BeforeToolDecision
@@ -104,10 +105,12 @@ class Guard:
 
         # 2~4. 세부 정책 (egress / file_path / pii)
         # matched_any_specific: 세부 정책 중 하나라도 "해당"되었는지 추적
+        # worst_result: block이 아닌 결과 중 가장 제한적인 것 (block은 즉시 반환)
         matched_any_specific = False
+        worst_result = None
 
         # 2. Egress 정책
-        if self._block_egress and has_url(args):
+        if self._block_egress and (has_url(args) or has_email_destination(args)):
             matched_any_specific = True
             r = evaluate_egress(
                 name, args,
@@ -115,24 +118,34 @@ class Guard:
                 block_egress=self._block_egress,
             )
             if r is not None:
-                return _decision(r)
+                if r["action"] == "block":
+                    return _decision(r)
+                worst_result = r
 
         # 3. 파일 경로 정책
         if self._file_path_allowlist and _has_path(args):
             matched_any_specific = True
             r = evaluate_file_path(name, args, allowlist=self._file_path_allowlist)
             if r is not None:
-                return _decision(r)
+                if r["action"] == "block":
+                    return _decision(r)
+                if worst_result is None:
+                    worst_result = r
 
         # 4. PII 정책
         if self._pii_action != "off":
             r = evaluate_pii(name, args, pii_action=self._pii_action)
             if r is not None:
                 matched_any_specific = True
-                return _decision(r)
+                if r["action"] == "block":
+                    return _decision(r)
+                if worst_result is None:
+                    worst_result = r
 
-        # 세부 정책이 하나라도 해당되었으면 → capability 건너뛰고 allow 반환
+        # 세부 정책이 하나라도 해당되었으면 → capability 건너뛰고 결과 반환
         if matched_any_specific:
+            if worst_result is not None:
+                return _decision(worst_result)
             d = BeforeToolDecision(
                 action="allow",
                 reason="specific_policy_passed",
