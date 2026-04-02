@@ -245,6 +245,87 @@ class Guard:
         )
 
     # ------------------------------------------------------------------
+    # classmethod: 정책 파일에서 생성
+    # ------------------------------------------------------------------
+    _KNOWN_CONFIG_KEYS = {
+        "version", "mode", "domain_allowlist", "file_path_allowlist",
+        "pii_action", "block_egress", "tool_blocklist",
+        "capability_policy", "default_action",
+    }
+
+    @classmethod
+    def from_config(cls, config: dict, **overrides) -> "Guard":
+        """검증된 config dict에서 Guard를 생성
+
+        Args:
+            config: 정책 설정 dict (version 필수)
+            **overrides: Guard 생성자 파라미터 override (on_block, on_warn, mode 등)
+        """
+        cls._validate_config(config)
+        guard_params = {k: v for k, v in config.items() if k != "version"}
+        guard_params.update(overrides)
+        return cls(**guard_params)
+
+    @classmethod
+    def from_policy_file(cls, path: str, **overrides) -> "Guard":
+        """정책 파일에서 Guard를 생성 (편의 API)
+
+        Args:
+            path: 정책 파일 경로 (.json, .yaml, .yml)
+            **overrides: Guard 생성자 파라미터 override
+        """
+        from asr.config import load_policy_file
+        config = load_policy_file(path)
+        return cls.from_config(config, **overrides)
+
+    @classmethod
+    def _validate_config(cls, config: dict) -> None:
+        """정책 config를 검증"""
+        if "version" not in config:
+            raise ValueError("정책 파일에 'version' 필드가 필요합니다")
+        if config["version"] != 1:
+            raise ValueError(
+                f"지원하지 않는 version: {config['version']}. 현재 version: 1만 지원합니다"
+            )
+
+        unknown = set(config.keys()) - cls._KNOWN_CONFIG_KEYS
+        if unknown:
+            raise ValueError(f"알 수 없는 정책 필드: {', '.join(sorted(unknown))}")
+
+        _VALID_VALUES = {
+            "mode": ("enforce", "warn", "shadow"),
+            "pii_action": ("off", "warn", "block"),
+            "default_action": ("allow", "warn", "block"),
+        }
+        for field, valid in _VALID_VALUES.items():
+            if field in config and config[field] not in valid:
+                raise ValueError(
+                    f"'{field}' 값이 올바르지 않습니다: {config[field]!r}. "
+                    f"허용: {', '.join(valid)}"
+                )
+
+        for field in ("domain_allowlist", "file_path_allowlist", "tool_blocklist"):
+            if field in config:
+                val = config[field]
+                if not isinstance(val, list) or not all(isinstance(x, str) for x in val):
+                    raise ValueError(f"'{field}'는 문자열 리스트여야 합니다")
+
+        if "block_egress" in config and not isinstance(config["block_egress"], bool):
+            raise ValueError("'block_egress'는 bool이어야 합니다")
+
+        if "capability_policy" in config:
+            cp = config["capability_policy"]
+            if not isinstance(cp, dict):
+                raise ValueError("'capability_policy'는 dict여야 합니다")
+            valid_actions = ("allow", "warn", "block")
+            for k, v in cp.items():
+                if v not in valid_actions:
+                    raise ValueError(
+                        f"'capability_policy' 값이 올바르지 않습니다: "
+                        f"{k}={v!r}. 허용: {', '.join(valid_actions)}"
+                    )
+
+    # ------------------------------------------------------------------
     # protect 데코레이터
     # ------------------------------------------------------------------
     def protect(
