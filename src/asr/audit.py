@@ -36,16 +36,26 @@ class AuditLogger:
             event = self._base_event(trace_id, "guard_before", "guard")
             event.update({
                 "tool_name": decision.tool_name, "capabilities": decision.capabilities,
-                "decision": decision.action, "reason": decision.reason,
+                "decision": decision.action,  # 기존 필드 유지 (하위호환)
+                "effective_action": decision.action,
+                "original_action": decision.original_action or decision.action,
+                "mode": decision.mode,
+                "reason": decision.reason,
                 "policy_id": decision.policy_id, "severity": decision.severity,
                 "redacted_args": decision.redacted_args,
             })
         else:
             event = self._base_event(trace_id, "guard_after", "guard")
             event.update({
-                "tool_name": decision.tool_name, "decision": decision.action,
-                "reason": decision.reason, "policy_id": decision.policy_id,
-                "severity": decision.severity, "redacted_result": decision.redacted_result,
+                "tool_name": decision.tool_name,
+                "decision": decision.action,  # 기존 필드 유지 (하위호환)
+                "effective_action": decision.action,
+                "original_action": decision.original_action or decision.action,
+                "mode": decision.mode,
+                "protection_type": "data_protection",
+                "reason": decision.reason,
+                "policy_id": decision.policy_id, "severity": decision.severity,
+                "redacted_result": decision.redacted_result,
             })
         self._emit(event)
 

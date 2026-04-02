@@ -116,3 +116,47 @@ class TestAuditLoggerStoreRaw:
                        severity="low", stack_trace="Traceback ...")
         output = capsys.readouterr().out.strip()
         assert json.loads(output)["stack_trace"] == "Traceback ..."
+
+
+class TestAuditModeFields:
+    def test_guard_before_includes_mode_fields(self, capsys):
+        audit = AuditLogger(output="stdout")
+        decision = BeforeToolDecision(
+            action="warn", reason="domain_not_allowed", policy_id="domain_allowlist",
+            severity="high", tool_name="http_post",
+            original_action="block", mode="warn",
+        )
+        audit.log_guard(decision, trace_id="t-mode-1")
+        event = json.loads(capsys.readouterr().out.strip())
+        assert event["decision"] == "warn"  # 기존 필드 유지
+        assert event["effective_action"] == "warn"
+        assert event["original_action"] == "block"
+        assert event["mode"] == "warn"
+
+    def test_guard_after_includes_mode_and_protection_type(self, capsys):
+        audit = AuditLogger(output="stdout")
+        decision = AfterToolDecision(
+            action="redact_result", reason="pii_detected_in_result",
+            policy_id="pii_detection", severity="high", tool_name="search",
+            redacted_result="[REDACTED]",
+            original_action="redact_result", mode="shadow",
+        )
+        audit.log_guard(decision, trace_id="t-mode-2")
+        event = json.loads(capsys.readouterr().out.strip())
+        assert event["decision"] == "redact_result"  # 기존 필드 유지
+        assert event["effective_action"] == "redact_result"
+        assert event["original_action"] == "redact_result"
+        assert event["mode"] == "shadow"
+        assert event["protection_type"] == "data_protection"
+
+    def test_guard_before_enforce_original_equals_effective(self, capsys):
+        audit = AuditLogger(output="stdout")
+        decision = BeforeToolDecision(
+            action="block", reason="tool_in_blocklist", policy_id="tool_blocklist",
+            severity="high", tool_name="rm_rf",
+            original_action="block", mode="enforce",
+        )
+        audit.log_guard(decision, trace_id="t-mode-3")
+        event = json.loads(capsys.readouterr().out.strip())
+        assert event["effective_action"] == event["original_action"] == "block"
+        assert event["mode"] == "enforce"
