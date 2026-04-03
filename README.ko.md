@@ -6,7 +6,7 @@
 
 Agent Runtime Security는 웹 탐색, API 호출, 파일 접근, 이메일 전송, MCP 도구 호출처럼 **실제 행동을 수행하는 AI 에이전트**를 대상으로, 위험한 도구 호출을 통제하고 민감정보를 보호하며 감사 로그를 남길 수 있게 해줍니다.
 
-이 프로젝트는 Google DeepMind의 2026년 논문 *AI Agent Traps*에서 출발했으며, 지금 당장 현실적으로 방어 가능한 영역에 집중합니다.
+이 프로젝트는 Google DeepMind의 2026년 논문 [*AI Agent Traps*](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6372438)에서 출발했으며, 지금 당장 현실적으로 방어 가능한 영역에 집중합니다.
 
 - 입력 단계의 기본적인 content injection 신호 탐지
 - 도구 실행 시점의 behavioral control
