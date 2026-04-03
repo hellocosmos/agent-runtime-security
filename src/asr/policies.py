@@ -1,6 +1,6 @@
 """Policy evaluators.
 
-Each evaluator returns a result dictionary or ``None`` when it does not apply.
+Each evaluator returns a typed policy match or ``None`` when it does not apply.
 """
 from __future__ import annotations
 import fnmatch
@@ -8,15 +8,22 @@ import ipaddress
 import pathlib
 from urllib.parse import urlparse
 from asr.pii import has_pii
+from asr.types import PolicyMatch
 
 
-def evaluate_tool_blocklist(tool_name: str, args: dict, *, blocklist: list[str]) -> dict | None:
+def evaluate_tool_blocklist(tool_name: str, args: dict, *, blocklist: list[str]) -> PolicyMatch | None:
     if tool_name in blocklist:
-        return {"action": "block", "reason": "tool_in_blocklist", "policy_id": "tool_blocklist", "severity": "high"}
+        return _match("block", "tool_in_blocklist", "tool_blocklist", "high")
     return None
 
 
-def evaluate_egress(tool_name: str, args: dict, *, domain_allowlist: list[str], block_egress: bool) -> dict | None:
+def evaluate_egress(
+    tool_name: str,
+    args: dict,
+    *,
+    domain_allowlist: list[str],
+    block_egress: bool,
+) -> PolicyMatch | None:
     if not block_egress:
         return None
     url_str = _extract_url(args)
@@ -26,21 +33,20 @@ def evaluate_egress(tool_name: str, args: dict, *, domain_allowlist: list[str], 
         if hostname is None:
             return None
         if _is_private_or_local(hostname):
-            return {"action": "block", "reason": "private_or_local_address", "policy_id": "egress_control", "severity": "high"}
+            return _match("block", "private_or_local_address", "egress_control", "high")
         if not _domain_matches(hostname, domain_allowlist):
-            return {"action": "block", "reason": "domain_not_allowed", "policy_id": "domain_allowlist", "severity": "high"}
+            return _match("block", "domain_not_allowed", "domain_allowlist", "high")
         return None
     # If there is no URL, inspect email-recipient fields instead.
     email_dest = _extract_email_destination(args)
     if email_dest is not None:
         email_domain = email_dest.split("@")[1] if "@" in email_dest else None
         if email_domain and not _domain_matches(email_domain, domain_allowlist):
-            return {"action": "warn", "reason": "email_destination_not_in_allowlist",
-                    "policy_id": "egress_control", "severity": "medium"}
+            return _match("warn", "email_destination_not_in_allowlist", "egress_control", "medium")
     return None
 
 
-def evaluate_file_path(tool_name: str, args: dict, *, allowlist: list[str]) -> dict | None:
+def evaluate_file_path(tool_name: str, args: dict, *, allowlist: list[str]) -> PolicyMatch | None:
     path_str = _extract_path(args)
     if path_str is None:
         return None
@@ -48,7 +54,7 @@ def evaluate_file_path(tool_name: str, args: dict, *, allowlist: list[str]) -> d
     sensitive_patterns = ["**/.ssh/*", "**/.env", "**/.env.*", "**/credentials*", "**/secrets*"]
     for pattern in sensitive_patterns:
         if fnmatch.fnmatch(path_str, pattern):
-            return {"action": "block", "reason": "sensitive_path", "policy_id": "file_path_allowlist", "severity": "high"}
+            return _match("block", "sensitive_path", "file_path_allowlist", "high")
     # Normalize the path, then verify it is inside an allowed directory.
     resolved = pathlib.Path(path_str).resolve()
     for allowed in allowlist:
@@ -58,20 +64,20 @@ def evaluate_file_path(tool_name: str, args: dict, *, allowlist: list[str]) -> d
             return None
         except ValueError:
             continue
-    return {"action": "block", "reason": "path_not_allowed", "policy_id": "file_path_allowlist", "severity": "medium"}
+    return _match("block", "path_not_allowed", "file_path_allowlist", "medium")
 
 
-def evaluate_pii(tool_name: str, args: dict, *, pii_action: str) -> dict | None:
+def evaluate_pii(tool_name: str, args: dict, *, pii_action: str) -> PolicyMatch | None:
     if pii_action == "off":
         return None
     args_text = _args_to_text(args)
     if not has_pii(args_text):
         return None
-    return {"action": pii_action, "reason": "pii_detected_in_args", "policy_id": "pii_detection",
-            "severity": "high" if pii_action == "block" else "medium"}
+    severity = "high" if pii_action == "block" else "medium"
+    return _match(pii_action, "pii_detected_in_args", "pii_detection", severity)
 
 
-def evaluate_capability(*, capabilities: list[str] | None, policy: dict[str, str]) -> dict | None:
+def evaluate_capability(*, capabilities: list[str] | None, policy: dict[str, str]) -> PolicyMatch | None:
     if not capabilities:
         return None
     _priority = {"block": 3, "warn": 2, "allow": 1}
@@ -82,13 +88,13 @@ def evaluate_capability(*, capabilities: list[str] | None, policy: dict[str, str
         if _priority.get(action, 0) > _priority.get(worst_action, 0):
             worst_action = action
             worst_cap = cap
-    return {"action": worst_action, "reason": f"capability_{worst_cap}", "policy_id": "capability_policy",
-            "severity": "high" if worst_action == "block" else "medium" if worst_action == "warn" else "low"}
+    severity = "high" if worst_action == "block" else "medium" if worst_action == "warn" else "low"
+    return _match(worst_action, f"capability_{worst_cap}", "capability_policy", severity)
 
 
-def evaluate_unknown_tool(*, default: str) -> dict:
-    return {"action": default, "reason": "unknown_tool", "policy_id": "default_action",
-            "severity": "medium" if default == "warn" else "high"}
+def evaluate_unknown_tool(*, default: str) -> PolicyMatch:
+    severity = "medium" if default == "warn" else "high"
+    return _match(default, "unknown_tool", "default_action", severity)
 
 
 def has_url(args: dict) -> bool:
@@ -102,6 +108,15 @@ def has_email_destination(args: dict) -> bool:
 
 
 # --- Internal helpers ---
+
+def _match(action: str, reason: str, policy_id: str, severity: str) -> PolicyMatch:
+    return PolicyMatch(
+        action=action,
+        reason=reason,
+        policy_id=policy_id,
+        severity=severity,
+    )
+
 
 def _extract_url(args: dict) -> str | None:
     for key in ("url", "endpoint", "uri", "href", "target"):

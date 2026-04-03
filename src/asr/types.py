@@ -2,7 +2,35 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
+
+
+@dataclass(frozen=True)
+class PolicyMatch(Mapping[str, str]):
+    """Typed policy evaluation result with dict-like compatibility."""
+
+    action: str
+    reason: str
+    policy_id: str
+    severity: str
+
+    _FIELDS = ("action", "reason", "policy_id", "severity")
+
+    def __getitem__(self, key: str) -> str:
+        if key not in self._FIELDS:
+            raise KeyError(key)
+        return getattr(self, key)
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._FIELDS)
+
+    def __len__(self) -> int:
+        return len(self._FIELDS)
+
+    def as_dict(self) -> dict[str, str]:
+        """Return the policy match as a plain dictionary."""
+        return {field: getattr(self, field) for field in self._FIELDS}
 
 
 @dataclass(frozen=True)

@@ -6,6 +6,8 @@
 
 Agent Runtime Security helps teams control risky tool calls, redact sensitive data, and keep audit trails for AI agent workflows. It is designed for practical runtime defense, especially where agents can browse the web, call APIs, read files, send email, or interact with MCP tools.
 
+Brand note: `TrapDefense` is the product and site brand, while `Agent Runtime Security` is the open-source SDK and repository name.
+
 This project was inspired by Google DeepMind's 2026 paper, [*AI Agent Traps*](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6372438), and focuses on the parts that are practical to defend today:
 
 - Content injection signals at ingestion time
@@ -240,6 +242,8 @@ Run the test suite:
 ```bash
 pytest
 ```
+
+For demos and internal validation, the MCP example in [examples/README.md](./examples/README.md) is the recommended starting point.
 
 ## Repository language policy
 

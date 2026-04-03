@@ -6,10 +6,17 @@ from asr.scanner import Scanner
 from asr.guard import Guard, BlockedToolError
 from asr.audit import AuditLogger
 from asr.config import load_policy_file
-from asr.types import ScanResult, Finding, BeforeToolDecision, AfterToolDecision
+from asr.types import (
+    ScanResult,
+    Finding,
+    BeforeToolDecision,
+    AfterToolDecision,
+    PolicyMatch,
+)
 
 __all__ = [
     "Scanner", "Guard", "BlockedToolError", "AuditLogger",
     "ScanResult", "Finding", "BeforeToolDecision", "AfterToolDecision",
+    "PolicyMatch",
     "load_policy_file",
 ]

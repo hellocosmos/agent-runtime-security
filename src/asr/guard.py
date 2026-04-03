@@ -8,7 +8,8 @@ from typing import Any, Callable
 
 logger = logging.getLogger("asr.guard")
 
-from asr.pii import has_pii, redact_pii
+from asr.guard_config import KNOWN_CONFIG_KEYS, validate_guard_config
+from asr.pii import has_pii
 from asr.policies import (
     evaluate_capability,
     evaluate_egress,
@@ -19,7 +20,8 @@ from asr.policies import (
     has_email_destination,
     has_url,
 )
-from asr.types import AfterToolDecision, BeforeToolDecision
+from asr.redaction import extract_text, redact_args, redact_result
+from asr.types import AfterToolDecision, BeforeToolDecision, PolicyMatch
 
 
 # --- Internal helper: detect file path keys in args ---
@@ -93,14 +95,14 @@ class Guard:
         caps = capabilities or []
         redacted = self._redact_args(args)
 
-        def _decision(result: dict) -> BeforeToolDecision:
-            original = result["action"]
+        def _decision(result: PolicyMatch) -> BeforeToolDecision:
+            original = result.action
             effective = self._apply_mode(original)
             d = BeforeToolDecision(
                 action=effective,
-                reason=result["reason"],
-                policy_id=result["policy_id"],
-                severity=result["severity"],
+                reason=result.reason,
+                policy_id=result.policy_id,
+                severity=result.severity,
                 tool_name=name,
                 redacted_args=redacted,
                 capabilities=caps,
@@ -130,7 +132,7 @@ class Guard:
                 block_egress=self._block_egress,
             )
             if r is not None:
-                if r["action"] == "block":
+                if r.action == "block":
                     return _decision(r)
                 worst_result = r
 
@@ -139,7 +141,7 @@ class Guard:
             matched_any_specific = True
             r = evaluate_file_path(name, args, allowlist=self._file_path_allowlist)
             if r is not None:
-                if r["action"] == "block":
+                if r.action == "block":
                     return _decision(r)
                 if worst_result is None:
                     worst_result = r
@@ -149,7 +151,7 @@ class Guard:
             r = evaluate_pii(name, args, pii_action=self._pii_action)
             if r is not None:
                 matched_any_specific = True
-                if r["action"] == "block":
+                if r.action == "block":
                     return _decision(r)
                 if worst_result is None:
                     worst_result = r
@@ -247,11 +249,7 @@ class Guard:
     # ------------------------------------------------------------------
     # Classmethods for policy-file construction.
     # ------------------------------------------------------------------
-    _KNOWN_CONFIG_KEYS = {
-        "version", "mode", "domain_allowlist", "file_path_allowlist",
-        "pii_action", "block_egress", "tool_blocklist",
-        "capability_policy", "default_action",
-    }
+    _KNOWN_CONFIG_KEYS = KNOWN_CONFIG_KEYS
 
     @classmethod
     def from_config(cls, config: dict, **overrides) -> "Guard":
@@ -281,49 +279,7 @@ class Guard:
     @classmethod
     def _validate_config(cls, config: dict) -> None:
         """Validate a policy config dictionary."""
-        if "version" not in config:
-            raise ValueError("Policy files must include a 'version' field")
-        if config["version"] != 1:
-            raise ValueError(
-                f"Unsupported version: {config['version']}. Only version 1 is supported"
-            )
-
-        unknown = set(config.keys()) - cls._KNOWN_CONFIG_KEYS
-        if unknown:
-            raise ValueError(f"Unknown policy field(s): {', '.join(sorted(unknown))}")
-
-        _VALID_VALUES = {
-            "mode": ("enforce", "warn", "shadow"),
-            "pii_action": ("off", "warn", "block"),
-            "default_action": ("allow", "warn", "block"),
-        }
-        for field, valid in _VALID_VALUES.items():
-            if field in config and config[field] not in valid:
-                raise ValueError(
-                    f"Invalid value for '{field}': {config[field]!r}. "
-                    f"Allowed: {', '.join(valid)}"
-                )
-
-        for field in ("domain_allowlist", "file_path_allowlist", "tool_blocklist"):
-            if field in config:
-                val = config[field]
-                if not isinstance(val, list) or not all(isinstance(x, str) for x in val):
-                    raise ValueError(f"'{field}' must be a list of strings")
-
-        if "block_egress" in config and not isinstance(config["block_egress"], bool):
-            raise ValueError("'block_egress' must be a bool")
-
-        if "capability_policy" in config:
-            cp = config["capability_policy"]
-            if not isinstance(cp, dict):
-                raise ValueError("'capability_policy' must be a dict")
-            valid_actions = ("allow", "warn", "block")
-            for k, v in cp.items():
-                if v not in valid_actions:
-                    raise ValueError(
-                        f"Invalid 'capability_policy' value: "
-                        f"{k}={v!r}. Allowed: {', '.join(valid_actions)}"
-                    )
+        validate_guard_config(config)
 
     # ------------------------------------------------------------------
     # protect decorator
@@ -391,15 +347,7 @@ class Guard:
 
     def _redact_args(self, args: dict) -> dict:
         """Redact PII from string values inside an args dictionary."""
-        redacted = {}
-        for key, value in args.items():
-            if isinstance(value, str):
-                redacted[key] = redact_pii(value)
-            elif isinstance(value, dict):
-                redacted[key] = self._redact_args(value)
-            else:
-                redacted[key] = value
-        return redacted
+        return redact_args(args)
 
     def _fire_callbacks(self, decision: BeforeToolDecision) -> None:
         """Invoke block or warn callbacks when configured."""
@@ -411,23 +359,8 @@ class Guard:
     @staticmethod
     def _extract_text(result: Any) -> str:
         """Recursively extract text from a result for PII inspection."""
-        if isinstance(result, str):
-            return result
-        if isinstance(result, dict):
-            parts = []
-            for v in result.values():
-                parts.append(Guard._extract_text(v))
-            return " ".join(parts)
-        if isinstance(result, (list, tuple)):
-            return " ".join(Guard._extract_text(item) for item in result)
-        return str(result) if result is not None else ""
+        return extract_text(result)
 
     def _redact_result(self, result: Any) -> Any:
         """Redact PII while preserving the original result type."""
-        if isinstance(result, str):
-            return redact_pii(result)
-        if isinstance(result, dict):
-            return {k: self._redact_result(v) for k, v in result.items()}
-        if isinstance(result, (list, tuple)):
-            return type(result)(self._redact_result(item) for item in result)
-        return result
+        return redact_result(result)

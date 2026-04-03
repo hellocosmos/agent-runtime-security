@@ -24,11 +24,22 @@ mcp = FastMCP("ARS Demo Server")
 
 @mcp.tool()
 @mcp_guard(guard, audit=audit, capabilities=["network_send"])
+async def post_webhook(url: str, body: str) -> str:
+    """Send a webhook (simulated).
+
+    URL-based egress policy blocks destinations outside the domain allowlist.
+    This is the clearest blocking demo for external network calls.
+    """
+    return f"Webhook sent: url={url}, body_length={len(body)}"
+
+
+@mcp.tool()
+@mcp_guard(guard, audit=audit, capabilities=["network_send"])
 async def send_email(to: str, subject: str, body: str) -> str:
     """Send an email (simulated).
 
-    Egress policy blocks destinations outside the domain allowlist.
-    In shadow mode the call is allowed, but audit keeps original_action=block.
+    Recipient domains are inspected by egress policy.
+    In this demo, external email destinations produce a warning and remain auditable.
     """
     return f"Email sent: to={to}, subject={subject}"
 

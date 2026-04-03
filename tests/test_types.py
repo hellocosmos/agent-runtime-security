@@ -1,6 +1,39 @@
 """Tests for the shared dataclasses."""
 
-from asr.types import Finding, ScanResult, BeforeToolDecision, AfterToolDecision
+from asr.types import (
+    Finding,
+    ScanResult,
+    BeforeToolDecision,
+    AfterToolDecision,
+    PolicyMatch,
+)
+
+
+class TestPolicyMatch:
+    def test_attribute_access(self):
+        match = PolicyMatch(
+            action="block",
+            reason="domain_not_allowed",
+            policy_id="domain_allowlist",
+            severity="high",
+        )
+        assert match.action == "block"
+        assert match.policy_id == "domain_allowlist"
+
+    def test_mapping_compatibility(self):
+        match = PolicyMatch(
+            action="warn",
+            reason="email_destination_not_in_allowlist",
+            policy_id="egress_control",
+            severity="medium",
+        )
+        assert match["action"] == "warn"
+        assert dict(match) == {
+            "action": "warn",
+            "reason": "email_destination_not_in_allowlist",
+            "policy_id": "egress_control",
+            "severity": "medium",
+        }
 
 
 class TestFinding:
