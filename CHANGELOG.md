@@ -2,6 +2,22 @@
 
 Follows [Keep a Changelog](https://keepachangelog.com/) format.
 
+## [0.2.0] - 2026-04-04
+
+### Added
+
+- **LangChain adapter** — `guard_tool()` wraps any LangChain `BaseTool` with Guard policy enforcement
+  - Block → `ToolException` (compatible with `handle_tool_error`)
+  - Automatic PII redaction on tool results
+  - Audit logging support
+- **LangGraph adapter** — `create_guarded_tool_node()` wraps all tools in a `ToolNode` with Guard
+  - Per-tool capability mapping via `capabilities_map`
+  - Works inside LangGraph state graphs
+- **New optional dependencies** — `langchain` and `langgraph` extras
+  - `pip install agent-runtime-security[langchain]`
+  - `pip install agent-runtime-security[langgraph]`
+- **New examples** — `langchain_agent.py` and `langgraph_agent.py`
+
 ## [0.1.0] - 2026-04-03
 
 Initial public release.

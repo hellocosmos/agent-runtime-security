@@ -39,6 +39,8 @@ Prompt filters and content scanning can help, but they do not stop the final act
 - `Scanner` for basic content-injection detection
 - `AuditLogger` for structured JSONL security events
 - `mcp_guard` for protecting MCP tool handlers
+- `guard_tool` for protecting LangChain tools
+- `create_guarded_tool_node` for protecting LangGraph ToolNodes
 - `shadow`, `warn`, and `enforce` rollout modes
 - YAML / JSON policy file loading
 - Minimal dependencies with a Python-first integration model
@@ -67,6 +69,18 @@ With YAML policy loading:
 
 ```bash
 pip install agent-runtime-security[yaml]
+```
+
+With LangChain integration:
+
+```bash
+pip install agent-runtime-security[langchain]
+```
+
+With LangGraph integration:
+
+```bash
+pip install agent-runtime-security[langgraph]
 ```
 
 ## Quick Start
@@ -162,6 +176,52 @@ async def send_email(to: str, subject: str, body: str) -> str:
 When a tool call is blocked, the adapter turns the policy decision into an MCP-compatible tool error. If sensitive data appears in the result, it can also be redacted automatically.
 
 See the example server in [examples/README.md](./examples/README.md).
+
+## LangChain Integration
+
+Protect LangChain tools with `guard_tool`:
+
+```python
+from langchain_core.tools import tool
+from asr import Guard
+from asr.adapters.langchain import guard_tool
+
+guard = Guard(
+    domain_allowlist=["api.internal.com"],
+    block_egress=True,
+    pii_action="redact",
+)
+
+@tool
+def send_email(to: str, subject: str, body: str) -> str:
+    """Send an email."""
+    return f"Sent to {to}"
+
+protected = guard_tool(send_email, guard=guard, capabilities=["network_send"])
+result = protected.invoke({"to": "user@api.internal.com", "subject": "hi", "body": "hello"})
+```
+
+When a tool is blocked, `ToolException` is raised and returned as an error message (via `handle_tool_error=True`). PII in tool results is automatically redacted.
+
+## LangGraph Integration
+
+Protect all tools in a LangGraph `ToolNode`:
+
+```python
+from asr import Guard
+from asr.adapters.langgraph import create_guarded_tool_node
+
+guard = Guard.from_policy_file("policy.yaml")
+
+tool_node = create_guarded_tool_node(
+    tools=[search_tool, file_reader_tool],
+    guard=guard,
+    capabilities_map={"search_tool": ["network_send"]},
+)
+# graph.add_node("tools", tool_node)
+```
+
+See `examples/langchain_agent.py` and `examples/langgraph_agent.py` for full working examples.
 
 ## Policy Model
 

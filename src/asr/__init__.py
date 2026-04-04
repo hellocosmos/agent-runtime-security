@@ -1,6 +1,6 @@
 """Agent Runtime Security - security SDK for tool-using AI agents."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 from asr.scanner import Scanner
 from asr.guard import Guard, BlockedToolError

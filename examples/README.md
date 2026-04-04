@@ -76,6 +76,20 @@ search(query="admin")
 
 Update `policy.yaml` to change policy behavior without modifying code.
 
+## LangChain / LangGraph Examples
+
+Guard also integrates with LangChain and LangGraph:
+
+```bash
+# LangChain: protect individual tools with guard_tool()
+python examples/langchain_agent.py
+
+# LangGraph: protect all tools in a ToolNode
+python examples/langgraph_agent.py
+```
+
+Both examples run without an LLM and demonstrate allow, block, and PII redaction scenarios.
+
 ## Suggested Demo Order
 
 1. Run `python examples/demo.py` to confirm shadow/enforce behavior before the meeting.
