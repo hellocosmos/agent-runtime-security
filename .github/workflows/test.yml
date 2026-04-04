@@ -22,7 +22,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: pip install -e ".[dev,langchain,langgraph]"
+        run: pip install -e ".[dev,mcp,langchain,langgraph]"
 
       - name: Run tests
         run: pytest -q
