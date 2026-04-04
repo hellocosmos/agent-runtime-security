@@ -1,4 +1,4 @@
-"""Scanner module with eight pattern-based content security checks.
+"""Scanner module with eleven pattern-based content security checks.
 
 Detection patterns:
   1. css_hidden_text           - hidden CSS text combined with injection phrases
@@ -9,6 +9,9 @@ Detection patterns:
   6. base64_encoded_instruction - base64-encoded injection instructions
   7. invisible_unicode         - invisible Unicode character detection
   8. role_override_attempt     - role override attempts (SYSTEM:, Assistant:, etc.)
+  9. suspicious_url            - shortened URLs and direct IP-based URLs
+  10. data_exfil_phrase        - data exfiltration intent phrases
+  11. encoded_bypass           - hex/unicode escape sequences bypassing filters
 """
 
 from __future__ import annotations
@@ -100,6 +103,33 @@ _ROLE_OVERRIDE_RE = re.compile(
     re.MULTILINE | re.IGNORECASE,
 )
 
+# Shortened URL services and direct IP access URLs.
+_SUSPICIOUS_URL_RE = re.compile(
+    r"https?://(?:"
+    r"bit\.ly|tinyurl\.com|t\.co|goo\.gl|is\.gd|buff\.ly|ow\.ly|rebrand\.ly|bl\.ink|short\.io"
+    r"|(?:\d{1,3}\.){3}\d{1,3}"  # Direct IP access
+    r")(?:/\S*)?",
+    re.IGNORECASE,
+)
+
+# Data exfiltration intent phrases.
+_DATA_EXFIL_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(r"send\s+(all|every|entire)\s+(data|records?|files?|database|content)\s+to", re.IGNORECASE),
+    re.compile(r"export\s+(all|every|entire)\s+(data|records?|files?|database|users?)", re.IGNORECASE),
+    re.compile(r"transfer\s+(all|this)\s+(data|information)\s+to\s+(?:external|outside|my)", re.IGNORECASE),
+    re.compile(r"upload\s+(everything|all\s+data|all\s+files?)\s+to", re.IGNORECASE),
+    re.compile(r"copy\s+(all|entire)\s+(database|table|records?)\s+to", re.IGNORECASE),
+    re.compile(r"forward\s+(all|every)\s+(email|message|communication)s?\s+to", re.IGNORECASE),
+    re.compile(r"dump\s+(all|the|entire)\s+(data|database|table|log)", re.IGNORECASE),
+    re.compile(r"전체\s*데이터.{0,10}(전송|보내|내보내|추출|다운로드)", re.IGNORECASE),
+    re.compile(r"모든\s*(파일|데이터|정보).{0,10}(외부|밖으로|다른\s*곳)", re.IGNORECASE),
+]
+
+# Hex/unicode encoding bypass attempts.
+_HEX_ESCAPE_RE = re.compile(r"(?:\\x[0-9a-fA-F]{2}){4,}")  # \x41\x42\x43\x44 (4+ consecutive)
+_UNICODE_ESCAPE_RE = re.compile(r"(?:\\u[0-9a-fA-F]{4}){3,}")  # \u0041\u0042\u0043 (3+ consecutive)
+_HTML_ENTITY_CHAIN_RE = re.compile(r"(?:&#x?[0-9a-fA-F]+;){4,}")  # &#x41;&#x42; (4+ consecutive)
+
 # Severity weights.
 _SEVERITY_SCORES = {"high": 0.4, "medium": 0.25, "low": 0.1}
 
@@ -151,6 +181,9 @@ class Scanner:
         findings.extend(self._check_base64_encoded_instruction(content))
         findings.extend(self._check_invisible_unicode(content))
         findings.extend(self._check_role_override_attempt(content))
+        findings.extend(self._check_suspicious_url(content))
+        findings.extend(self._check_data_exfil_phrase(content))
+        findings.extend(self._check_encoded_bypass(content))
 
         # Calculate the score, capped at 1.0.
         score = min(
@@ -326,6 +359,60 @@ class Scanner:
                     location="content_body",
                 )
             )
+        return results
+
+    @staticmethod
+    def _check_suspicious_url(content: str) -> list[Finding]:
+        """Detect shortened URLs and direct IP access URLs."""
+        results: list[Finding] = []
+        for match in _SUSPICIOUS_URL_RE.finditer(content):
+            results.append(
+                Finding(
+                    pattern_id="suspicious_url",
+                    severity="medium",
+                    description="Detected shortened URL or direct IP access that may indicate exfiltration",
+                    location=f"url={match.group()!r}",
+                )
+            )
+        return results
+
+    @staticmethod
+    def _check_data_exfil_phrase(content: str) -> list[Finding]:
+        """Detect data exfiltration intent phrases."""
+        results: list[Finding] = []
+        for pattern in _DATA_EXFIL_PATTERNS:
+            if pattern.search(content):
+                results.append(
+                    Finding(
+                        pattern_id="data_exfil_phrase",
+                        severity="high",
+                        description="Detected data exfiltration phrase",
+                        location="content_body",
+                    )
+                )
+                break  # Avoid duplicate findings
+        return results
+
+    @staticmethod
+    def _check_encoded_bypass(content: str) -> list[Finding]:
+        """Detect hex/unicode encoding that may bypass filters."""
+        results: list[Finding] = []
+        patterns = [
+            (_HEX_ESCAPE_RE, "hex_escape"),
+            (_UNICODE_ESCAPE_RE, "unicode_escape"),
+            (_HTML_ENTITY_CHAIN_RE, "html_entity_chain"),
+        ]
+        for pattern, sub_type in patterns:
+            if pattern.search(content):
+                results.append(
+                    Finding(
+                        pattern_id="encoded_bypass",
+                        severity="medium",
+                        description=f"Detected {sub_type} encoding that may bypass filters",
+                        location="content_body",
+                    )
+                )
+                break  # Report only the first match
         return results
 
     # Excerpt generation

@@ -9,6 +9,7 @@ KNOWN_CONFIG_KEYS = {
     "domain_allowlist",
     "file_path_allowlist",
     "pii_action",
+    "pii_profiles",
     "block_egress",
     "tool_blocklist",
     "capability_policy",

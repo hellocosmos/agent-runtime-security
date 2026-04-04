@@ -60,6 +60,7 @@ class Guard:
         domain_allowlist: list[str] | None = None,
         file_path_allowlist: list[str] | None = None,
         pii_action: str = "off",
+        pii_profiles: list[str] | None = None,
         block_egress: bool = False,
         tool_blocklist: list[str] | None = None,
         capability_policy: dict[str, str] | None = None,
@@ -73,6 +74,7 @@ class Guard:
         self._domain_allowlist = domain_allowlist or []
         self._file_path_allowlist = file_path_allowlist or []
         self._pii_action = pii_action
+        self._pii_profiles = pii_profiles
         self._block_egress = block_egress
         self._tool_blocklist = tool_blocklist or []
         self._capability_policy = capability_policy or {}
@@ -148,7 +150,7 @@ class Guard:
 
         # 4. PII policy
         if self._pii_action != "off":
-            r = evaluate_pii(name, args, pii_action=self._pii_action)
+            r = evaluate_pii(name, args, pii_action=self._pii_action, pii_profiles=self._pii_profiles)
             if r is not None:
                 matched_any_specific = True
                 if r.action == "block":
@@ -207,7 +209,7 @@ class Guard:
             )
 
         text = self._extract_text(result)
-        if not has_pii(text):
+        if not has_pii(text, profiles=self._pii_profiles):
             return AfterToolDecision(
                 action="allow",
                 reason="no_pii_in_result",
@@ -260,6 +262,7 @@ class Guard:
             **overrides: Guard constructor overrides such as ``on_block`` or ``mode``.
         """
         cls._validate_config(config)
+        # version 키 제외, pii_profiles 포함 나머지 config 키를 그대로 전달
         guard_params = {k: v for k, v in config.items() if k != "version"}
         guard_params.update(overrides)
         return cls(**guard_params)
@@ -362,5 +365,5 @@ class Guard:
         return extract_text(result)
 
     def _redact_result(self, result: Any) -> Any:
-        """Redact PII while preserving the original result type."""
-        return redact_result(result)
+        """원래 결과 타입을 보존하면서 PII를 마스킹한다."""
+        return redact_result(result, profiles=self._pii_profiles)

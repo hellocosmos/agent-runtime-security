@@ -67,11 +67,17 @@ def evaluate_file_path(tool_name: str, args: dict, *, allowlist: list[str]) -> P
     return _match("block", "path_not_allowed", "file_path_allowlist", "medium")
 
 
-def evaluate_pii(tool_name: str, args: dict, *, pii_action: str) -> PolicyMatch | None:
+def evaluate_pii(
+    tool_name: str,
+    args: dict,
+    *,
+    pii_action: str,
+    pii_profiles: list[str] | None = None,
+) -> PolicyMatch | None:
     if pii_action == "off":
         return None
     args_text = _args_to_text(args)
-    if not has_pii(args_text):
+    if not has_pii(args_text, profiles=pii_profiles):
         return None
     severity = "high" if pii_action == "block" else "medium"
     return _match(pii_action, "pii_detected_in_args", "pii_detection", severity)

@@ -83,6 +83,19 @@ With LangGraph integration:
 pip install agent-runtime-security[langgraph]
 ```
 
+## Cloud API
+
+Don't want to install anything? Use the hosted API:
+
+```bash
+curl -X POST https://trapdefense.com/api/v1/scan \
+  -H "Authorization: Bearer YOUR_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"content": "Check this text for threats"}'
+```
+
+→ [API Docs](https://trapdefense.com/api/docs) | [Get API Key](https://trapdefense.com/#contact-form)
+
 ## Quick Start
 
 ```python
