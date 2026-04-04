@@ -8,7 +8,36 @@ version = "0.1.0"
 description = "Python SDK for agent input scanning, tool-call guardrails, and audit logs"
 requires-python = ">=3.11"
 license = {text = "MIT"}
+readme = "README.md"
+authors = [
+  {name = "Jaemyung Kim"},
+]
+keywords = [
+  "agent-security",
+  "runtime-guard",
+  "mcp",
+  "tool-use",
+  "audit",
+  "pii-redaction",
+  "ai-agent",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Security",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+]
 dependencies = []
+
+[project.urls]
+Homepage = "https://trapdefense.com"
+Repository = "https://github.com/hellocosmos/agent-runtime-security"
+Documentation = "https://trapdefense.com/docs"
+Issues = "https://github.com/hellocosmos/agent-runtime-security/issues"
 
 [project.optional-dependencies]
 pdf = ["pymupdf>=1.23.0"]

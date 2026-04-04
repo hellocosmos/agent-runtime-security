@@ -1,5 +1,9 @@
 # Agent Runtime Security
 
+[![Test](https://github.com/hellocosmos/agent-runtime-security/actions/workflows/test.yml/badge.svg)](https://github.com/hellocosmos/agent-runtime-security/actions/workflows/test.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+
 [English](./README.md) | [한국어](./README.ko.md)
 
 > Open-source runtime security for tool-using AI agents.

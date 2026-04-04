@@ -5,4 +5,5 @@ dist/
 *.egg-info/
 .DS_Store
 logs/
-docs/
+site/
+CLAUDE.md
