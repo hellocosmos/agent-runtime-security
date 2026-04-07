@@ -36,9 +36,51 @@ def _has_path(args: dict) -> bool:
 class BlockedToolError(Exception):
     """Raised when Guard blocks a tool invocation."""
 
-    def __init__(self, decision: BeforeToolDecision):
+    def __init__(self, decision: BeforeToolDecision, *, context: dict | None = None):
         self.decision = decision
-        super().__init__(f"Blocked: {decision.reason} (policy={decision.policy_id})")
+        self.context = context or {}
+        super().__init__(self._short_message())
+
+    def _short_message(self) -> str:
+        d = self.decision
+        target = self.context.get("target", "")
+        target_part = f" to '{target}'" if target else ""
+        return (
+            f"Blocked: tool '{d.tool_name}'{target_part} "
+            f"({d.reason}, policy={d.policy_id}, mode={d.mode})"
+        )
+
+    def to_dict(self) -> dict:
+        """Return structured error info for logging/API responses."""
+        d = self.decision
+        return {
+            "tool_name": d.tool_name,
+            "action": d.action,
+            "reason": d.reason,
+            "policy_id": d.policy_id,
+            "mode": d.mode,
+            "severity": d.severity,
+            "capabilities": list(d.capabilities),
+            "original_action": d.original_action,
+            "details": dict(self.context),
+        }
+
+    def debug_message(self) -> str:
+        """Return human-readable debug output."""
+        info = self.to_dict()
+        details = info.get("details", {})
+        lines = [f"Blocked: tool '{info['tool_name']}'"]
+        if "target" in details:
+            lines.append(f"  Target: {details['target']}")
+        lines.append(f"  Reason: {info['reason']}")
+        if "allowed_domains" in details:
+            lines.append(f"  Allowed: {', '.join(details['allowed_domains'])}")
+        lines.append(f"  Policy: {info['policy_id']} | Mode: {info['mode']}")
+        if "trace_id" in details:
+            lines.append(f"  Trace: {details['trace_id']}")
+        if "fix_hint" in details:
+            lines.append(f"  Fix: {details['fix_hint']}")
+        return "\n".join(lines)
 
 
 class Guard:
