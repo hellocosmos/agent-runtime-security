@@ -809,3 +809,71 @@ class TestGuardToolEndToEnd:
             await danger()
 
         assert len(events) >= 2
+
+
+class TestBeforeToolV2Overrides:
+    """before_tool() must respect per-tool YAML overrides."""
+
+    def test_before_tool_uses_tool_mode(self):
+        guard = Guard(
+            mode="enforce",
+            tool_blocklist=["dangerous"],
+            tools={"dangerous": {"mode": "shadow"}},
+        )
+        # tool-level mode is shadow → block should become allow
+        # blocklist check returns block, then _apply_mode_local(shadow) → allow
+        d = guard.before_tool("dangerous", {})
+        assert d.action == "allow"
+        assert d.original_action == "block"
+        assert d.mode == "shadow"
+
+    def test_before_tool_uses_tool_domain_allowlist(self):
+        guard = Guard(
+            mode="enforce",
+            block_egress=True,
+            domain_allowlist=["global.com"],
+            tools={
+                "send_email": {
+                    "domain_allowlist": ["mail.internal"],
+                },
+            },
+        )
+        # global.com should be rejected by tool-specific allowlist
+        d = guard.before_tool("send_email", {"url": "https://global.com/api"})
+        assert d.action == "block"
+        assert d.policy_id == "domain_allowlist"
+
+        # mail.internal should be allowed
+        d = guard.before_tool("send_email", {"url": "https://mail.internal/api"})
+        assert d.action == "allow"
+
+    def test_before_tool_unregistered_uses_global(self):
+        guard = Guard(
+            mode="enforce",
+            block_egress=True,
+            domain_allowlist=["global.com"],
+            tools={},
+        )
+        d = guard.before_tool("unknown", {"url": "https://global.com/api"})
+        assert d.action == "allow"
+
+
+class TestAfterToolV2Overrides:
+    """after_tool() must respect per-tool YAML overrides."""
+
+    def test_after_tool_uses_tool_pii_action(self):
+        guard = Guard(
+            pii_action="off",  # global: off
+            tools={
+                "send_email": {"pii_action": "block"},  # tool: block
+            },
+        )
+        # Global says off, but tool says block → should redact
+        d = guard.after_tool("send_email", "Found: admin@secret.com")
+        assert d.action == "redact_result"
+        assert "admin@secret.com" not in str(d.redacted_result)
+
+    def test_after_tool_unregistered_uses_global(self):
+        guard = Guard(pii_action="off", tools={})
+        d = guard.after_tool("unknown", "admin@secret.com")
+        assert d.action == "allow"

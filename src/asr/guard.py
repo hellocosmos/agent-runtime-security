@@ -141,107 +141,8 @@ class Guard:
         capabilities: list[str] | None = None,
     ) -> BeforeToolDecision:
         """Evaluate policies before a tool call."""
-        caps = capabilities or []
-        redacted = self._redact_args(args)
-
-        def _decision(result: PolicyMatch) -> BeforeToolDecision:
-            original = result.action
-            effective = self._apply_mode(original)
-            d = BeforeToolDecision(
-                action=effective,
-                reason=result.reason,
-                policy_id=result.policy_id,
-                severity=result.severity,
-                tool_name=name,
-                redacted_args=redacted,
-                capabilities=caps,
-                original_action=original,
-                mode=self._mode,
-            )
-            self._fire_callbacks(d)
-            return d
-
-        # 1. Blocklist - highest priority.
-        r = evaluate_tool_blocklist(name, args, blocklist=self._tool_blocklist)
-        if r is not None:
-            return _decision(r)
-
-        # Email capability can be stricter than recipient-domain policy.
-        # If a preset says email_send is blocked, apply that contract for any
-        # email-style tool before egress policy downgrades the decision to warn.
-        if has_email_destination(args) and "email_send" in caps:
-            email_action = self._capability_policy.get("email_send")
-            if email_action == "block":
-                r = evaluate_capability(capabilities=["email_send"], policy=self._capability_policy)
-                if r is not None:
-                    return _decision(r)
-
-        # 2-4. Specific policies (egress / file_path / pii)
-        # matched_any_specific tracks whether any specific policy applied.
-        # worst_result keeps the strictest non-block result; blocks return immediately.
-        matched_any_specific = False
-        worst_result = None
-
-        # 2. Egress policy
-        if self._block_egress and (has_url(args) or has_email_destination(args)):
-            matched_any_specific = True
-            r = evaluate_egress(
-                name, args,
-                domain_allowlist=self._domain_allowlist,
-                block_egress=self._block_egress,
-            )
-            if r is not None:
-                if r.action == "block":
-                    return _decision(r)
-                worst_result = r
-
-        # 3. File path policy
-        if self._file_path_allowlist and _has_path(args):
-            matched_any_specific = True
-            r = evaluate_file_path(name, args, allowlist=self._file_path_allowlist)
-            if r is not None:
-                if r.action == "block":
-                    return _decision(r)
-                if worst_result is None:
-                    worst_result = r
-
-        # 4. PII policy
-        if self._pii_action != "off":
-            r = evaluate_pii(name, args, pii_action=self._pii_action, pii_profiles=self._pii_profiles)
-            if r is not None:
-                matched_any_specific = True
-                if r.action == "block":
-                    return _decision(r)
-                if worst_result is None:
-                    worst_result = r
-
-        # If any specific policy matched, skip capability fallback and return now.
-        if matched_any_specific:
-            if worst_result is not None:
-                return _decision(worst_result)
-            d = BeforeToolDecision(
-                action=self._apply_mode("allow"),
-                reason="specific_policy_passed",
-                policy_id="specific_policy",
-                severity="low",
-                tool_name=name,
-                redacted_args=redacted,
-                capabilities=caps,
-                original_action="allow",
-                mode=self._mode,
-            )
-            self._fire_callbacks(d)
-            return d
-
-        # 5. Capability policy - true fallback.
-        if caps and self._capability_policy:
-            r = evaluate_capability(capabilities=caps, policy=self._capability_policy)
-            if r is not None:
-                return _decision(r)
-
-        # 6. Final fallback - default_action.
-        r = evaluate_unknown_tool(default=self._default_action)
-        return _decision(r)
+        config = self._resolve_tool_config(name, capabilities)
+        return self._before_tool_with_config(name, args, config, context)
 
     # ------------------------------------------------------------------
     # after_tool
@@ -253,7 +154,22 @@ class Guard:
         context: dict | None = None,
     ) -> AfterToolDecision:
         """Inspect and redact PII in the tool result."""
-        if self._pii_action == "off":
+        config = self._resolve_tool_config(name, None)
+        return self._after_tool_with_config(name, result, config, context)
+
+    def _after_tool_with_config(
+        self,
+        name: str,
+        result: Any,
+        config: dict,
+        context: dict | None = None,
+    ) -> AfterToolDecision:
+        """Inspect and redact PII using resolved config."""
+        pii_action = config.get("pii_action", self._pii_action)
+        pii_profiles = config.get("pii_profiles", self._pii_profiles)
+        mode = config.get("mode", self._mode)
+
+        if pii_action == "off":
             return AfterToolDecision(
                 action="allow",
                 reason="pii_off",
@@ -262,11 +178,11 @@ class Guard:
                 tool_name=name,
                 redacted_result=result,
                 original_action="allow",
-                mode=self._mode,
+                mode=mode,
             )
 
         text = self._extract_text(result)
-        if not has_pii(text, profiles=self._pii_profiles):
+        if not has_pii(text, profiles=pii_profiles):
             return AfterToolDecision(
                 action="allow",
                 reason="no_pii_in_result",
@@ -275,13 +191,13 @@ class Guard:
                 tool_name=name,
                 redacted_result=result,
                 original_action="allow",
-                mode=self._mode,
+                mode=mode,
             )
 
         # PII found.
-        redacted = self._redact_result(result)
+        redacted = redact_result(result, profiles=pii_profiles)
 
-        if self._pii_action == "block":
+        if pii_action == "block":
             return AfterToolDecision(
                 action="redact_result",
                 reason="pii_detected_in_result",
@@ -290,7 +206,7 @@ class Guard:
                 tool_name=name,
                 redacted_result=redacted,
                 original_action="redact_result",
-                mode=self._mode,
+                mode=mode,
             )
 
         # pii_action == "warn"
@@ -302,7 +218,7 @@ class Guard:
             tool_name=name,
             redacted_result=redacted,
             original_action="warn",
-            mode=self._mode,
+            mode=mode,
         )
 
     # ------------------------------------------------------------------
@@ -406,7 +322,7 @@ class Guard:
 
                 result = await func(*args, **kwargs)
 
-                after_decision = self.after_tool(tool_name, result)
+                after_decision = self._after_tool_with_config(tool_name, result, resolved)
                 if effective_audit is not None:
                     effective_audit.log_guard(after_decision, trace_id=trace_id)
 
@@ -439,7 +355,7 @@ class Guard:
 
                 result = func(*args, **kwargs)
 
-                after_decision = self.after_tool(tool_name, result)
+                after_decision = self._after_tool_with_config(tool_name, result, resolved)
                 if effective_audit is not None:
                     effective_audit.log_guard(after_decision, trace_id=trace_id)
 

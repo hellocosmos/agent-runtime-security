@@ -35,16 +35,16 @@ class TestMcpGuardDeprecated:
 
 @pytest.mark.filterwarnings("ignore::FutureWarning")
 class TestMcpGuardBlocking:
-    """BlockedToolError should be raised when before_tool blocks (delegated to guard.tool())."""
+    """mcp_guard converts BlockedToolError to ToolError for MCP compat."""
 
-    async def test_blocked_tool_raises_blocked_tool_error(self):
+    async def test_blocked_tool_raises_tool_error(self):
         guard = Guard(tool_blocklist=["dangerous_tool"])
 
         @mcp_guard(guard)
         async def dangerous_tool(cmd: str) -> str:
             return "should not reach"
 
-        with pytest.raises(BlockedToolError):
+        with pytest.raises(ToolError):
             await dangerous_tool(cmd="rm -rf /")
 
     async def test_allowed_tool_executes(self):
@@ -64,7 +64,7 @@ class TestMcpGuardBlocking:
         async def blocked_tool() -> str:
             return "nope"
 
-        with pytest.raises(BlockedToolError) as exc_info:
+        with pytest.raises(ToolError) as exc_info:
             await blocked_tool()
         msg = str(exc_info.value)
         assert "blocked_tool" in msg
@@ -212,7 +212,7 @@ class TestMcpGuardOptions:
         async def run_cmd(cmd: str) -> str:
             return "output"
 
-        with pytest.raises(BlockedToolError):
+        with pytest.raises(ToolError):
             await run_cmd(cmd="ls")
 
     async def test_trace_id_getter_ignored(self):
@@ -276,3 +276,26 @@ class TestMcpGuardErrorPropagation:
 
         with pytest.raises(ValueError):
             await buggy_tool(x="test")
+
+
+@pytest.mark.filterwarnings("ignore::FutureWarning")
+class TestMcpGuardToolErrorPreserved:
+    """mcp_guard must still raise ToolError during deprecation window."""
+
+    async def test_blocked_raises_tool_error_not_blocked_tool_error(self):
+        guard = Guard(tool_blocklist=["blocked_tool"])
+
+        @mcp_guard(guard)
+        async def blocked_tool() -> str:
+            return "nope"
+
+        with pytest.raises(ToolError):
+            await blocked_tool()
+
+        # Should NOT be BlockedToolError
+        try:
+            await blocked_tool()
+        except ToolError:
+            pass  # correct
+        except BlockedToolError:
+            pytest.fail("Should raise ToolError, not BlockedToolError")
