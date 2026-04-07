@@ -529,3 +529,171 @@ class TestGuardModeShadow:
         d = guard.after_tool("search", "Found: admin@secret.com")
         assert d.mode == "shadow"
         assert d.original_action == "redact_result"
+
+
+class TestGuardToolDecorator:
+    """Tests for the unified guard.tool() decorator."""
+
+    def test_sync_function(self):
+        guard = Guard(default_action="allow")
+
+        @guard.tool()
+        def my_tool(x):
+            return f"result: {x}"
+
+        assert my_tool(x="hello") == "result: hello"
+
+    def test_sync_function_bare(self):
+        """@guard.tool without parens."""
+        guard = Guard(default_action="allow")
+
+        @guard.tool
+        def my_tool(x):
+            return f"result: {x}"
+
+        assert my_tool(x="hello") == "result: hello"
+
+    @pytest.mark.asyncio
+    async def test_async_function(self):
+        guard = Guard(default_action="allow")
+
+        @guard.tool()
+        async def my_tool(x):
+            return f"result: {x}"
+
+        result = await my_tool(x="hello")
+        assert result == "result: hello"
+
+    def test_blocked_raises_blocked_tool_error(self):
+        guard = Guard(tool_blocklist=["dangerous"])
+
+        @guard.tool()
+        def dangerous():
+            return "nope"
+
+        with pytest.raises(BlockedToolError) as exc_info:
+            dangerous()
+        assert exc_info.value.decision.action == "block"
+
+    def test_yaml_tool_lookup(self):
+        """Function name maps to YAML tools: section."""
+        guard = Guard(
+            mode="shadow",
+            domain_allowlist=["global.com"],
+            block_egress=True,
+            tools={
+                "send_email": {
+                    "domain_allowlist": ["mail.internal"],
+                    "mode": "enforce",
+                },
+            },
+        )
+
+        @guard.tool()
+        def send_email(url):
+            return "sent"
+
+        with pytest.raises(BlockedToolError) as exc_info:
+            send_email(url="https://evil.com/api")
+        assert exc_info.value.decision.policy_id == "domain_allowlist"
+
+    def test_name_override(self):
+        guard = Guard(
+            tools={
+                "email_sender": {"mode": "enforce", "domain_allowlist": ["mail.internal"], "block_egress": True},
+            },
+            block_egress=True,
+        )
+
+        @guard.tool(name="email_sender")
+        def send_email_v2(url):
+            return "sent"
+
+        with pytest.raises(BlockedToolError):
+            send_email_v2(url="https://evil.com/api")
+
+    def test_capabilities_override(self):
+        guard = Guard(
+            capability_policy={"shell_exec": "block"},
+            tools={"my_tool": {"capabilities": ["file_read"]}},
+        )
+
+        @guard.tool(capabilities=["shell_exec"])
+        def my_tool(cmd):
+            return "output"
+
+        with pytest.raises(BlockedToolError):
+            my_tool(cmd="ls")
+
+    def test_unregistered_tool_uses_global(self):
+        guard = Guard(default_action="allow")
+
+        @guard.tool()
+        def unknown_func():
+            return "ok"
+
+        assert unknown_func() == "ok"
+
+    def test_result_redaction(self):
+        guard = Guard(pii_action="block")
+
+        @guard.tool()
+        def search():
+            return "Found: admin@secret.com"
+
+        result = search()
+        assert "admin@secret.com" not in result
+        assert "[EMAIL]" in result
+
+    def test_audit_logging(self):
+        from asr.audit import AuditLogger
+        events = []
+        audit = AuditLogger(output=events.append)
+        guard = Guard(default_action="allow", pii_action="off", audit=audit)
+
+        @guard.tool()
+        def my_tool(x):
+            return "ok"
+
+        my_tool(x="test")
+        assert len(events) == 2
+        assert events[0]["event_type"] == "guard_before"
+        assert events[1]["event_type"] == "guard_after"
+
+    def test_audit_per_tool_override(self):
+        from asr.audit import AuditLogger
+        global_events = []
+        tool_events = []
+        global_audit = AuditLogger(output=global_events.append)
+        tool_audit = AuditLogger(output=tool_events.append)
+        guard = Guard(default_action="allow", pii_action="off", audit=global_audit)
+
+        @guard.tool(audit=tool_audit)
+        def my_tool(x):
+            return "ok"
+
+        my_tool(x="test")
+        assert len(global_events) == 0
+        assert len(tool_events) == 2
+
+    def test_blocked_error_has_context(self):
+        guard = Guard(
+            block_egress=True,
+            domain_allowlist=["safe.com"],
+            tools={
+                "send_email": {
+                    "domain_allowlist": ["mail.internal"],
+                },
+            },
+        )
+
+        @guard.tool()
+        def send_email(url):
+            return "sent"
+
+        with pytest.raises(BlockedToolError) as exc_info:
+            send_email(url="https://evil.com/api")
+        err = exc_info.value
+        assert "evil.com" in str(err)
+        d = err.to_dict()
+        assert "details" in d

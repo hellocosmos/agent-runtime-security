@@ -4,6 +4,7 @@ from __future__ import annotations
 import functools
 import inspect
 import logging
+import uuid
 from typing import Any, Callable
 
 logger = logging.getLogger("asr.guard")
@@ -393,6 +394,96 @@ class Guard:
         return wrapper
 
     # ------------------------------------------------------------------
+    # tool decorator (unified)
+    # ------------------------------------------------------------------
+    def tool(
+        self,
+        func: Callable | None = None,
+        *,
+        name: str | None = None,
+        capabilities: list[str] | None = None,
+        audit: "AuditLogger | None" = None,
+    ):
+        """Unified decorator for protecting tool functions.
+
+        Supports both sync and async functions. Looks up per-tool policy
+        from the YAML tools: section by function name (or name= override).
+        """
+        if func is None:
+            return functools.partial(self.tool, name=name, capabilities=capabilities, audit=audit)
+
+        tool_name = name or func.__name__
+        resolved = self._resolve_tool_config(tool_name, capabilities)
+        effective_audit = audit or self._audit
+
+        if inspect.iscoroutinefunction(func):
+            @functools.wraps(func)
+            async def async_wrapper(*args, **kwargs):
+                sig = inspect.signature(func)
+                try:
+                    bound = sig.bind_partial(*args, **kwargs)
+                    bound.apply_defaults()
+                    named_args = dict(bound.arguments)
+                except TypeError:
+                    named_args = kwargs.copy()
+
+                trace_id = str(uuid.uuid4())
+                decision = self._before_tool_with_config(tool_name, named_args, resolved)
+
+                if effective_audit is not None:
+                    effective_audit.log_guard(decision, trace_id=trace_id)
+
+                if decision.action == "block":
+                    ctx = self._build_error_context(decision, named_args, resolved, trace_id)
+                    raise BlockedToolError(decision, context=ctx)
+
+                result = await func(*args, **kwargs)
+
+                after_decision = self.after_tool(tool_name, result)
+                if effective_audit is not None:
+                    effective_audit.log_guard(after_decision, trace_id=trace_id)
+
+                if after_decision.action == "redact_result" and after_decision.redacted_result is not None:
+                    return after_decision.redacted_result
+
+                return result
+
+            return async_wrapper
+        else:
+            @functools.wraps(func)
+            def sync_wrapper(*args, **kwargs):
+                sig = inspect.signature(func)
+                try:
+                    bound = sig.bind_partial(*args, **kwargs)
+                    bound.apply_defaults()
+                    named_args = dict(bound.arguments)
+                except TypeError:
+                    named_args = kwargs.copy()
+
+                trace_id = str(uuid.uuid4())
+                decision = self._before_tool_with_config(tool_name, named_args, resolved)
+
+                if effective_audit is not None:
+                    effective_audit.log_guard(decision, trace_id=trace_id)
+
+                if decision.action == "block":
+                    ctx = self._build_error_context(decision, named_args, resolved, trace_id)
+                    raise BlockedToolError(decision, context=ctx)
+
+                result = func(*args, **kwargs)
+
+                after_decision = self.after_tool(tool_name, result)
+                if effective_audit is not None:
+                    effective_audit.log_guard(after_decision, trace_id=trace_id)
+
+                if after_decision.action == "redact_result" and after_decision.redacted_result is not None:
+                    return after_decision.redacted_result
+
+                return result
+
+            return sync_wrapper
+
+    # ------------------------------------------------------------------
     # Internal utilities
     # ------------------------------------------------------------------
     def _resolve_tool_config(
@@ -456,3 +547,177 @@ class Guard:
     def _redact_result(self, result: Any) -> Any:
         """원래 결과 타입을 보존하면서 PII를 마스킹한다."""
         return redact_result(result, profiles=self._pii_profiles)
+
+    def _before_tool_with_config(
+        self,
+        name: str,
+        args: dict,
+        config: dict,
+        context: dict | None = None,
+    ) -> BeforeToolDecision:
+        """Evaluate policies using a resolved config."""
+        caps = config.get("capabilities") or []
+        redacted = self._redact_args(args)
+
+        mode = config.get("mode", self._mode)
+        domain_allowlist = config.get("domain_allowlist", self._domain_allowlist)
+        file_path_allowlist = config.get("file_path_allowlist", self._file_path_allowlist)
+        pii_action = config.get("pii_action", self._pii_action)
+        pii_profiles = config.get("pii_profiles", self._pii_profiles)
+        block_egress = config.get("block_egress", self._block_egress)
+        capability_policy = config.get("capability_policy", self._capability_policy)
+        default_action = config.get("default_action", self._default_action)
+
+        def _apply_mode_local(original: str) -> str:
+            if mode == "enforce":
+                return original
+            if mode == "warn":
+                return "warn" if original == "block" else original
+            return "allow"
+
+        def _decision(result: PolicyMatch) -> BeforeToolDecision:
+            original = result.action
+            effective = _apply_mode_local(original)
+            d = BeforeToolDecision(
+                action=effective,
+                reason=result.reason,
+                policy_id=result.policy_id,
+                severity=result.severity,
+                tool_name=name,
+                redacted_args=redacted,
+                capabilities=caps,
+                original_action=original,
+                mode=mode,
+            )
+            self._fire_callbacks(d)
+            return d
+
+        # 1. Blocklist (global only)
+        r = evaluate_tool_blocklist(name, args, blocklist=self._tool_blocklist)
+        if r is not None:
+            return _decision(r)
+
+        # Email capability pre-check
+        if has_email_destination(args) and "email_send" in caps:
+            email_action = capability_policy.get("email_send")
+            if email_action == "block":
+                r = evaluate_capability(capabilities=["email_send"], policy=capability_policy)
+                if r is not None:
+                    return _decision(r)
+
+        # 2-4. Specific policies
+        matched_any_specific = False
+        worst_result = None
+
+        if block_egress and (has_url(args) or has_email_destination(args)):
+            matched_any_specific = True
+            r = evaluate_egress(name, args, domain_allowlist=domain_allowlist, block_egress=block_egress)
+            if r is not None:
+                if r.action == "block":
+                    return _decision(r)
+                worst_result = r
+
+        if file_path_allowlist and _has_path(args):
+            matched_any_specific = True
+            r = evaluate_file_path(name, args, allowlist=file_path_allowlist)
+            if r is not None:
+                if r.action == "block":
+                    return _decision(r)
+                if worst_result is None:
+                    worst_result = r
+
+        if pii_action != "off":
+            r = evaluate_pii(name, args, pii_action=pii_action, pii_profiles=pii_profiles)
+            if r is not None:
+                matched_any_specific = True
+                if r.action == "block":
+                    return _decision(r)
+                if worst_result is None:
+                    worst_result = r
+
+        if matched_any_specific:
+            if worst_result is not None:
+                return _decision(worst_result)
+            d = BeforeToolDecision(
+                action=_apply_mode_local("allow"),
+                reason="specific_policy_passed",
+                policy_id="specific_policy",
+                severity="low",
+                tool_name=name,
+                redacted_args=redacted,
+                capabilities=caps,
+                original_action="allow",
+                mode=mode,
+            )
+            self._fire_callbacks(d)
+            return d
+
+        # 5. Capability fallback
+        if caps and capability_policy:
+            r = evaluate_capability(capabilities=caps, policy=capability_policy)
+            if r is not None:
+                return _decision(r)
+
+        # 6. Default
+        r = evaluate_unknown_tool(default=default_action)
+        return _decision(r)
+
+    @staticmethod
+    def _build_error_context(
+        decision: BeforeToolDecision,
+        args: dict,
+        config: dict,
+        trace_id: str,
+    ) -> dict:
+        """Build structured error context for BlockedToolError."""
+        from urllib.parse import urlparse
+
+        ctx: dict[str, object] = {"trace_id": trace_id}
+
+        for key in ("url", "endpoint", "uri", "href", "target"):
+            val = args.get(key)
+            if isinstance(val, str) and val.startswith(("http://", "https://")):
+                try:
+                    ctx["target"] = urlparse(val).hostname or val
+                    ctx["target_kind"] = "domain"
+                except Exception:
+                    ctx["target"] = val
+                    ctx["target_kind"] = "url"
+                break
+
+        if "target" not in ctx:
+            for key in ("to", "recipient", "recipients"):
+                val = args.get(key)
+                if val:
+                    if isinstance(val, list):
+                        ctx["target"] = ", ".join(str(v) for v in val)
+                    else:
+                        ctx["target"] = str(val)
+                    ctx["target_kind"] = "email"
+                    break
+
+        if "target" not in ctx:
+            for key in ("path", "file_path", "filepath", "file", "filename"):
+                val = args.get(key)
+                if isinstance(val, str):
+                    ctx["target"] = val
+                    ctx["target_kind"] = "file_path"
+                    break
+
+        if config.get("domain_allowlist"):
+            ctx["allowed_domains"] = config["domain_allowlist"]
+
+        policy_id = decision.policy_id
+        if policy_id == "domain_allowlist":
+            target = ctx.get("target", "the domain")
+            ctx["fix_hint"] = f"add '{target}' to domain_allowlist or set mode to 'shadow'"
+        elif policy_id == "file_path_allowlist":
+            ctx["fix_hint"] = "add the path to file_path_allowlist or set mode to 'shadow'"
+        elif policy_id == "tool_blocklist":
+            ctx["fix_hint"] = f"remove '{decision.tool_name}' from tool_blocklist"
+        elif policy_id == "pii_detection":
+            ctx["fix_hint"] = "set pii_action to 'warn' or 'off' for this tool"
+        elif policy_id == "capability_policy":
+            ctx["fix_hint"] = "change the capability action to 'warn' or 'allow'"
+
+        return ctx
