@@ -350,48 +350,15 @@ class Guard:
         *,
         capabilities: list[str] | None = None,
     ):
-        """Decorator that protects a tool function with Guard.
-
-        Examples:
-            @guard.protect
-            def my_tool(...): ...
-
-            @guard.protect(capabilities=["shell_exec"])
-            def run_cmd(...): ...
-        """
-        if func is None:
-            # Support @guard.protect(capabilities=["shell_exec"]).
-            return functools.partial(self.protect, capabilities=capabilities)
-
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            # Map positional arguments to parameter names.
-            sig = inspect.signature(func)
-            try:
-                bound = sig.bind_partial(*args, **kwargs)
-                bound.apply_defaults()
-                named_args = dict(bound.arguments)
-            except TypeError:
-                named_args = kwargs.copy()
-
-            # Evaluate before_tool.
-            tool_name = func.__name__
-            decision = self.before_tool(tool_name, named_args, capabilities=capabilities)
-
-            if decision.action == "block":
-                raise BlockedToolError(decision)
-
-            # Execute the wrapped function.
-            result = func(*args, **kwargs)
-
-            # Evaluate after_tool.
-            after_decision = self.after_tool(tool_name, result)
-            if after_decision.action == "redact_result":
-                return after_decision.redacted_result
-
-            return result
-
-        return wrapper
+        """Deprecated: use guard.tool() instead."""
+        import warnings
+        warnings.warn(
+            "guard.protect() is deprecated, use guard.tool() instead. "
+            "Tool-specific capabilities now come from policy.yaml tools: section.",
+            FutureWarning,
+            stacklevel=2,
+        )
+        return self.tool(func, capabilities=capabilities)
 
     # ------------------------------------------------------------------
     # tool decorator (unified)

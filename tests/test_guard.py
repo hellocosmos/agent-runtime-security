@@ -130,6 +130,7 @@ class TestGuardAfterTool:
         assert d.action == "allow"
 
 
+@pytest.mark.filterwarnings("ignore::FutureWarning")
 class TestProtectDecorator:
     def test_allowed_function_runs(self):
         guard = Guard(default_action="allow")
@@ -433,6 +434,7 @@ class TestGuardModeEnforce:
         assert d.original_action == "block"
 
 
+@pytest.mark.filterwarnings("ignore::FutureWarning")
 class TestGuardModeWarn:
     """Warn mode downgrades block decisions to warn."""
 
@@ -481,6 +483,7 @@ class TestGuardModeWarn:
         assert len(blocked) == 0
 
 
+@pytest.mark.filterwarnings("ignore::FutureWarning")
 class TestGuardModeShadow:
     """Shadow mode allows all actions while preserving original_action."""
 
@@ -529,6 +532,23 @@ class TestGuardModeShadow:
         d = guard.after_tool("search", "Found: admin@secret.com")
         assert d.mode == "shadow"
         assert d.original_action == "redact_result"
+
+
+class TestProtectDeprecated:
+    def test_protect_warns_future(self):
+        guard = Guard(default_action="allow")
+        with pytest.warns(FutureWarning, match="guard.tool"):
+            @guard.protect
+            def my_func():
+                return "ok"
+
+    def test_protect_still_works(self):
+        guard = Guard(default_action="allow")
+        with pytest.warns(FutureWarning):
+            @guard.protect
+            def my_func():
+                return "ok"
+        assert my_func() == "ok"
 
 
 class TestGuardToolDecorator:
