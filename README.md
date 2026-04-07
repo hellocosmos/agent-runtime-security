@@ -36,13 +36,15 @@ Prompt filters and content scanning can help, but they do not stop the final act
 ## Features
 
 - `Guard` for tool-use policy enforcement
+- `guard.tool()` as the unified decorator for sync and async tools
 - `Scanner` for basic content-injection detection
 - `AuditLogger` for structured JSONL security events
-- `mcp_guard` for protecting MCP tool handlers
+- `mcp_guard` as a compatibility wrapper for MCP handlers during the v0.3 transition
 - `guard_tool` for protecting LangChain tools
 - `create_guarded_tool_node` for protecting LangGraph ToolNodes
 - `shadow`, `warn`, and `enforce` rollout modes
 - YAML / JSON policy file loading
+- YAML v2 `tools:` overrides for per-tool policy
 - Minimal dependencies with a Python-first integration model
 
 ## Installation
@@ -83,18 +85,11 @@ With LangGraph integration:
 pip install agent-runtime-security[langgraph]
 ```
 
-## Cloud API
+## Product Docs
 
-Don't want to install anything? Use the hosted API:
+TrapDefense product and API documentation lives at [trapdefense.com/docs](https://trapdefense.com/docs).
 
-```bash
-curl -X POST https://trapdefense.com/api/v1/scan \
-  -H "Authorization: Bearer YOUR_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"content": "Check this text for threats"}'
-```
-
-→ [API Docs](https://trapdefense.com/api/docs) | [Get API Key](https://trapdefense.com/#contact-form)
+The hosted API is still in a limited-access stage, so this repository focuses on the open-source SDK and its local integration model.
 
 ## Quick Start
 
@@ -109,32 +104,50 @@ result = scanner.scan(
 )
 print(f"score={result.score}, severity={result.severity}")
 
-# Protect tool calls
-guard = Guard(
-    domain_allowlist=["api.internal.com"],
-    block_egress=True,
-    pii_action="block",
-    file_path_allowlist=["/tmp/safe"],
-    capability_policy={"shell_exec": "block"},
+# Protect tool calls with a policy file
+guard = Guard.from_policy_file(
+    "policy.yaml",
+    audit=AuditLogger(output="logs/audit.jsonl"),
 )
 
-decision = guard.before_tool(
-    "http_post",
-    {"url": "https://evil.com"},
-    capabilities=["network_send"],
-)
-print(f"action={decision.action}, reason={decision.reason}")
-
-# Decorator-based protection
-@guard.protect(capabilities=["network_send"])
+@guard.tool()
 def send_email(to, subject, body):
-    ...
+    return f"queued message to {to}"
 
-# Audit log
-audit = AuditLogger(output="logs/audit.jsonl")
-audit.log_scan(result, trace_id="req-001")
-audit.log_guard(decision, trace_id="req-001")
+decision = guard.before_tool("send_email", {"to": "user@mail.internal"})
+print(f"action={decision.action}, reason={decision.reason}")
+print(send_email("user@mail.internal", "hello", "world"))
 ```
+
+```yaml
+# policy.yaml
+version: 2
+mode: shadow
+pii_action: block
+block_egress: true
+domain_allowlist:
+  - internal.com
+capability_policy:
+  network_send: warn
+  shell_exec: block
+default_action: warn
+
+tools:
+  send_email:
+    capabilities: [network_send]
+    domain_allowlist: [mail.internal]
+    pii_action: redact
+    mode: enforce
+```
+
+`guard.tool()` uses the function name as the default tool identifier. If the YAML key differs from the function name, use `@guard.tool(name="...")`.
+
+## Migration Note for v0.3.0
+
+- `guard.tool()` is now the primary decorator for sync and async Python tools.
+- `guard.protect()` is deprecated and will be removed in v0.4.0.
+- `mcp_guard()` is deprecated and now acts as a compatibility wrapper around `guard.tool()` for MCP-native `ToolError` behavior during the v0.3.x transition.
+- Tool-specific capabilities should move from decorator arguments into `policy.yaml` under `tools:`.
 
 ## Rollout Modes
 
@@ -167,26 +180,24 @@ print(decision.mode)            # "shadow"
 
 ## MCP Integration
 
-Protect MCP tool handlers with `mcp_guard`:
+Use `guard.tool()` as the core API, and keep `mcp_guard()` only where you need MCP-native `ToolError` conversion during the v0.3.x transition:
 
 ```python
 from asr import Guard, AuditLogger
 from asr.mcp import mcp_guard
 
-guard = Guard(
-    mode="shadow",
-    domain_allowlist=["api.internal.com"],
-    block_egress=True,
+guard = Guard.from_policy_file(
+    "policy.yaml",
+    audit=AuditLogger(output="logs/audit.jsonl"),
 )
-audit = AuditLogger(output="logs/audit.jsonl")
 
 @server.tool()
-@mcp_guard(guard, audit=audit, capabilities=["network_send"])
+@mcp_guard(guard)
 async def send_email(to: str, subject: str, body: str) -> str:
     return await email_service.send(to, subject, body)
 ```
 
-When a tool call is blocked, the adapter turns the policy decision into an MCP-compatible tool error. If sensitive data appears in the result, it can also be redacted automatically.
+`mcp_guard()` now delegates to `guard.tool()` internally, then converts blocked decisions into MCP-compatible tool errors. If sensitive data appears in the result, it can also be redacted automatically.
 
 See the example server in [examples/README.md](./examples/README.md).
 
@@ -256,6 +267,31 @@ The `Guard` supports six policy layers and three rollout modes.
 `Blocklist -> Egress -> FilePath -> PII -> Capability (fallback) -> Default`
 
 This order matters because specific policies should be evaluated before generic capability fallback.
+
+### YAML v2 tool overrides
+
+Version 2 policy files can override global defaults per tool:
+
+```yaml
+version: 2
+mode: shadow
+pii_action: block
+default_action: warn
+
+tools:
+  send_email:
+    capabilities: [network_send]
+    domain_allowlist: [mail.internal]
+    pii_action: redact
+    mode: enforce
+```
+
+Merge behavior is intentionally predictable:
+
+- Scalar values such as `mode`, `pii_action`, and `default_action` are replaced by the tool-level value.
+- Lists such as `domain_allowlist`, `file_path_allowlist`, and `capabilities` are replaced, not merged.
+- `capability_policy` is shallow-merged so a tool can override one capability without redefining the entire map.
+- Unregistered tools fall back to the global policy.
 
 ## Scanner Coverage
 

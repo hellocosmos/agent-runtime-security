@@ -15,6 +15,8 @@ from asr import Guard, AuditLogger
 from asr.mcp import mcp_guard
 
 # Build Guard from the policy file.
+# This MCP example keeps the compatibility wrapper so blocked decisions
+# become MCP-native ToolError responses during the v0.3.x transition.
 POLICY_PATH = Path(__file__).parent / "policy.yaml"
 guard = Guard.from_policy_file(str(POLICY_PATH))
 audit = AuditLogger(output="stdout")
@@ -23,7 +25,7 @@ mcp = FastMCP("ARS Demo Server")
 
 
 @mcp.tool()
-@mcp_guard(guard, audit=audit, capabilities=["network_send"])
+@mcp_guard(guard, audit=audit)
 async def post_webhook(url: str, body: str) -> str:
     """Send a webhook (simulated).
 
@@ -34,7 +36,7 @@ async def post_webhook(url: str, body: str) -> str:
 
 
 @mcp.tool()
-@mcp_guard(guard, audit=audit, capabilities=["network_send"])
+@mcp_guard(guard, audit=audit)
 async def send_email(to: str, subject: str, body: str) -> str:
     """Send an email (simulated).
 
@@ -45,7 +47,7 @@ async def send_email(to: str, subject: str, body: str) -> str:
 
 
 @mcp.tool()
-@mcp_guard(guard, audit=audit, capabilities=["file_read"])
+@mcp_guard(guard, audit=audit)
 async def read_file(path: str) -> str:
     """Read a file (simulated).
 

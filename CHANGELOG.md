@@ -2,6 +2,38 @@
 
 Follows [Keep a Changelog](https://keepachangelog.com/) format.
 
+## [0.3.0] - 2026-04-07
+
+### Added
+
+- **Unified decorator API** — `guard.tool()` now protects both sync and async tools with one decorator
+  - Function name or `name=` is used to resolve the tool identifier
+  - Per-tool audit logger override support
+- **YAML v2 tool overrides** — `tools:` section adds per-tool policy configuration on top of global defaults
+  - Scalar values replace global defaults
+  - List values replace global defaults
+  - `capability_policy` uses shallow merge semantics
+- **Richer blocked errors** — `BlockedToolError` now provides:
+  - Short `str()` output for logs and user-facing messages
+  - `to_dict()` for structured responses and telemetry
+  - `debug_message()` for operator-friendly diagnostics
+
+### Changed
+
+- **Guard resolution path** — `before_tool()`, `after_tool()`, decorator calls, and adapters now share the same resolved-config path for YAML v2 behavior
+- **Examples and docs** — README, MCP example docs, and demo scripts now document the `guard.tool()`-first model and YAML v2 policy layout
+- **Package version** — bumped to `0.3.0`
+
+### Deprecated
+
+- **`guard.protect()`** — deprecated in favor of `guard.tool()`, scheduled for removal in `v0.4.0`
+- **`mcp_guard()`** — deprecated in favor of `guard.tool()`, while remaining available as an MCP compatibility wrapper during the `v0.3.x` transition
+
+### Notes
+
+- Tool-specific capabilities should now be defined in `policy.yaml` under `tools:`
+- Existing `version: 1` policy files remain supported without `tools:`
+
 ## [0.2.0] - 2026-04-04
 
 ### Added
