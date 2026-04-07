@@ -109,6 +109,8 @@ class Guard:
         default_action: str = "warn",
         on_block: Callable | None = None,
         on_warn: Callable | None = None,
+        audit: "AuditLogger | None" = None,
+        tools: dict[str, dict] | None = None,
     ):
         if mode not in ("enforce", "warn", "shadow"):
             raise ValueError(f"Invalid mode: {mode!r}. Must be 'enforce', 'warn', or 'shadow'")
@@ -123,6 +125,8 @@ class Guard:
         self._default_action = default_action
         self._on_block = on_block
         self._on_warn = on_warn
+        self._audit = audit
+        self._tools = tools or {}
         logger.info("Guard initialized (mode=%s)", self._mode)
 
     # ------------------------------------------------------------------
@@ -160,6 +164,16 @@ class Guard:
         r = evaluate_tool_blocklist(name, args, blocklist=self._tool_blocklist)
         if r is not None:
             return _decision(r)
+
+        # Email capability can be stricter than recipient-domain policy.
+        # If a preset says email_send is blocked, apply that contract for any
+        # email-style tool before egress policy downgrades the decision to warn.
+        if has_email_destination(args) and "email_send" in caps:
+            email_action = self._capability_policy.get("email_send")
+            if email_action == "block":
+                r = evaluate_capability(capabilities=["email_send"], policy=self._capability_policy)
+                if r is not None:
+                    return _decision(r)
 
         # 2-4. Specific policies (egress / file_path / pii)
         # matched_any_specific tracks whether any specific policy applied.
@@ -381,6 +395,39 @@ class Guard:
     # ------------------------------------------------------------------
     # Internal utilities
     # ------------------------------------------------------------------
+    def _resolve_tool_config(
+        self, tool_name: str, code_capabilities: list[str] | None
+    ) -> dict:
+        """Merge global + per-tool policy into an effective config."""
+        effective = {
+            "mode": self._mode,
+            "domain_allowlist": list(self._domain_allowlist) if self._domain_allowlist else [],
+            "file_path_allowlist": list(self._file_path_allowlist) if self._file_path_allowlist else [],
+            "pii_action": self._pii_action,
+            "pii_profiles": list(self._pii_profiles) if self._pii_profiles else None,
+            "block_egress": self._block_egress,
+            "capability_policy": dict(self._capability_policy) if self._capability_policy else {},
+            "default_action": self._default_action,
+        }
+
+        tool_config = self._tools.get(tool_name, {})
+        for key, value in tool_config.items():
+            if key == "capabilities":
+                continue
+            elif key == "capability_policy":
+                effective["capability_policy"].update(value)
+            elif isinstance(value, list):
+                effective[key] = list(value)
+            else:
+                effective[key] = value
+
+        if code_capabilities is not None:
+            effective["capabilities"] = code_capabilities
+        else:
+            effective["capabilities"] = tool_config.get("capabilities")
+
+        return effective
+
     def _apply_mode(self, original_action: str) -> str:
         """Return the effective action after applying the current mode."""
         if self._mode == "enforce":

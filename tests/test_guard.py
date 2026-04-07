@@ -253,6 +253,146 @@ class TestEgressEmailWiring:
         assert d.action == "warn"
         assert d.policy_id == "egress_control"
 
+    def test_email_send_capability_block_overrides_egress(self):
+        """If email_send is blocked, generic email tools should block before egress warn/allow."""
+        guard = Guard(
+            domain_allowlist=["internal.com"],
+            block_egress=True,
+            capability_policy={"email_send": "block"},
+        )
+        d = guard.before_tool(
+            "gmail_send",
+            {"to": "attacker@evil.com", "body": "hello"},
+            capabilities=["email_send"],
+        )
+        assert d.action == "block"
+        assert d.policy_id == "capability_policy"
+
+
+class TestGuardInit:
+    def test_tools_parameter_accepted(self):
+        guard = Guard(
+            tools={"send_email": {"capabilities": ["network_send"]}},
+        )
+        assert guard._tools == {"send_email": {"capabilities": ["network_send"]}}
+
+    def test_tools_default_empty(self):
+        guard = Guard()
+        assert guard._tools == {}
+
+    def test_audit_parameter_accepted(self):
+        from asr.audit import AuditLogger
+        events = []
+        audit = AuditLogger(output=events.append)
+        guard = Guard(audit=audit)
+        assert guard._audit is audit
+
+    def test_audit_default_none(self):
+        guard = Guard()
+        assert guard._audit is None
+
+    def test_from_config_with_tools(self):
+        config = {
+            "version": 2,
+            "mode": "shadow",
+            "tools": {
+                "send_email": {
+                    "capabilities": ["network_send"],
+                    "mode": "enforce",
+                },
+            },
+        }
+        guard = Guard.from_config(config)
+        assert guard._tools == config["tools"]
+        assert guard._mode == "shadow"
+
+    def test_from_config_v1_no_tools(self):
+        config = {"version": 1, "mode": "shadow"}
+        guard = Guard.from_config(config)
+        assert guard._tools == {}
+
+
+class TestResolveToolConfig:
+    def setup_method(self):
+        self.guard = Guard(
+            mode="shadow",
+            domain_allowlist=["global.com"],
+            file_path_allowlist=["/tmp"],
+            pii_action="block",
+            pii_profiles=["global-core"],
+            block_egress=True,
+            capability_policy={"network_send": "warn", "shell_exec": "block"},
+            default_action="warn",
+            tools={
+                "send_email": {
+                    "capabilities": ["network_send"],
+                    "domain_allowlist": ["mail.internal"],
+                    "mode": "enforce",
+                    "pii_action": "warn",
+                },
+                "empty_tool": {},
+            },
+        )
+
+    def test_registered_tool_overrides_scalars(self):
+        config = self.guard._resolve_tool_config("send_email", None)
+        assert config["mode"] == "enforce"
+        assert config["pii_action"] == "warn"
+
+    def test_registered_tool_replaces_lists(self):
+        config = self.guard._resolve_tool_config("send_email", None)
+        assert config["domain_allowlist"] == ["mail.internal"]
+
+    def test_registered_tool_inherits_unset(self):
+        config = self.guard._resolve_tool_config("send_email", None)
+        assert config["block_egress"] is True
+        assert config["file_path_allowlist"] == ["/tmp"]
+        assert config["default_action"] == "warn"
+
+    def test_capabilities_from_yaml(self):
+        config = self.guard._resolve_tool_config("send_email", None)
+        assert config["capabilities"] == ["network_send"]
+
+    def test_capabilities_code_overrides_yaml(self):
+        config = self.guard._resolve_tool_config("send_email", ["shell_exec"])
+        assert config["capabilities"] == ["shell_exec"]
+
+    def test_unregistered_tool_uses_global(self):
+        config = self.guard._resolve_tool_config("unknown_tool", None)
+        assert config["mode"] == "shadow"
+        assert config["domain_allowlist"] == ["global.com"]
+        assert config["capabilities"] is None
+
+    def test_empty_tool_config_inherits_all(self):
+        config = self.guard._resolve_tool_config("empty_tool", None)
+        assert config["mode"] == "shadow"
+        assert config["domain_allowlist"] == ["global.com"]
+
+    def test_capability_policy_shallow_merge(self):
+        guard = Guard(
+            capability_policy={"network_send": "warn", "shell_exec": "block"},
+            tools={
+                "t": {"capability_policy": {"network_send": "block"}},
+            },
+        )
+        config = guard._resolve_tool_config("t", None)
+        assert config["capability_policy"]["network_send"] == "block"
+        assert config["capability_policy"]["shell_exec"] == "block"
+
+    def test_mutable_copy_isolation(self):
+        config1 = self.guard._resolve_tool_config("send_email", None)
+        config2 = self.guard._resolve_tool_config("send_email", None)
+        config1["domain_allowlist"].append("injected.com")
+        assert "injected.com" not in config2["domain_allowlist"]
+        assert "injected.com" not in self.guard._domain_allowlist
+
+    def test_none_allowlists_produce_empty_lists(self):
+        guard = Guard()
+        config = guard._resolve_tool_config("any", None)
+        assert config["domain_allowlist"] == []
+        assert config["file_path_allowlist"] == []
+        assert config["capability_policy"] == {}
+
 
 class TestCapabilityAllow:
     def test_capability_allow_respected(self):
