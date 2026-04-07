@@ -122,13 +122,14 @@ class TestGuardFromConfig:
 
 
 class TestGuardFromConfigValidation:
-    def test_missing_version(self):
-        with pytest.raises(ValueError, match="version"):
-            Guard.from_config({"mode": "enforce"})
+    def test_missing_version_defaults_to_v1(self):
+        """version 없으면 v1로 간주, 유효한 설정이면 통과."""
+        guard = Guard.from_config({"mode": "enforce"})
+        assert guard._mode == "enforce"
 
     def test_unsupported_version(self):
         with pytest.raises(ValueError, match="version"):
-            Guard.from_config({"version": 2})
+            Guard.from_config({"version": 99})
 
     def test_unknown_key(self):
         with pytest.raises(ValueError, match="Unknown policy field"):
@@ -194,6 +195,6 @@ class TestGuardFromPolicyFile:
 
     def test_from_file_validates(self, tmp_path):
         p = tmp_path / "bad.json"
-        p.write_text(json.dumps({"mode": "enforce"}))
+        p.write_text(json.dumps({"version": 99}))
         with pytest.raises(ValueError, match="version"):
             Guard.from_policy_file(str(p))
