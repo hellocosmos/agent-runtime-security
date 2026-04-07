@@ -717,3 +717,95 @@ class TestGuardToolDecorator:
         assert "evil.com" in str(err)
         d = err.to_dict()
         assert "details" in d
+
+
+class TestGuardToolEndToEnd:
+    """Full workflow: YAML v2 -> guard.tool() -> block/allow/audit."""
+
+    def test_full_workflow_sync(self):
+        from asr.audit import AuditLogger
+        events = []
+        audit = AuditLogger(output=events.append)
+        guard = Guard.from_config(
+            {
+                "version": 2,
+                "mode": "enforce",
+                "domain_allowlist": ["global.com"],
+                "block_egress": True,
+                "pii_action": "block",
+                "default_action": "warn",
+                "tools": {
+                    "send_email": {
+                        "capabilities": ["network_send"],
+                        "domain_allowlist": ["mail.internal"],
+                        "mode": "enforce",
+                    },
+                    "search": {
+                        "mode": "shadow",
+                    },
+                },
+            },
+            audit=audit,
+        )
+
+        @guard.tool()
+        def send_email(to, url, body):
+            return "sent"
+
+        @guard.tool()
+        def search(query):
+            return f"results for {query}"
+
+        # send_email to evil.com -> blocked
+        with pytest.raises(BlockedToolError) as exc_info:
+            send_email(to="user@mail.internal", url="https://evil.com", body="hi")
+        err = exc_info.value
+        assert "evil.com" in str(err)
+        d = err.to_dict()
+        assert d["policy_id"] == "domain_allowlist"
+        assert "evil.com" in d["details"].get("target", "")
+        assert "mail.internal" in d["details"].get("allowed_domains", [])
+        assert d["details"].get("fix_hint") is not None
+
+        # send_email to internal -> allowed
+        result = send_email(to="u@mail.internal", url="https://mail.internal/send", body="hi")
+        assert result == "sent"
+
+        # search uses shadow mode from tool config -> always allows
+        result = search(query="test")
+        assert result == "results for test"
+
+        # audit events logged
+        assert len(events) >= 2
+
+    @pytest.mark.asyncio
+    async def test_full_workflow_async(self):
+        from asr.audit import AuditLogger
+        events = []
+        audit = AuditLogger(output=events.append)
+        guard = Guard.from_config(
+            {
+                "version": 2,
+                "mode": "enforce",
+                "tool_blocklist": ["danger"],
+                "default_action": "allow",
+                "tools": {},
+            },
+            audit=audit,
+        )
+
+        @guard.tool()
+        async def safe_action(x):
+            return f"ok: {x}"
+
+        @guard.tool()
+        async def danger():
+            return "nope"
+
+        result = await safe_action(x="hello")
+        assert result == "ok: hello"
+
+        with pytest.raises(BlockedToolError):
+            await danger()
+
+        assert len(events) >= 2
