@@ -1,4 +1,4 @@
-version: 1
+version: 2
 mode: shadow
 domain_allowlist:
   - internal.com
@@ -10,3 +10,15 @@ capability_policy:
   network_send: warn
   file_read: allow
 default_action: warn
+
+tools:
+  send_email:
+    capabilities: [network_send]
+    domain_allowlist: [mail.internal]
+    pii_action: warn
+    mode: enforce
+  read_file:
+    capabilities: [file_read]
+    file_path_allowlist: [/tmp/safe, /data/reports]
+  run_query:
+    capabilities: [db_access]
