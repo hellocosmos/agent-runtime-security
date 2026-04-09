@@ -33,6 +33,7 @@ _INJECTION_PHRASES: list[re.Pattern[str]] = [
     re.compile(r"ignore\s+(prior|previous|all|above)\s+instructions", re.IGNORECASE),
     re.compile(r"ignore\s+instructions", re.IGNORECASE),
     re.compile(r"disregard\s+(prior|previous|all|above)\s+instructions", re.IGNORECASE),
+    re.compile(r"override\s+(?:all\s+)?(?:prior|previous)\s+instructions", re.IGNORECASE),
     re.compile(r"override\s+safety", re.IGNORECASE),
     re.compile(r"exfiltrate\b", re.IGNORECASE),
     re.compile(r"send\s+(all\s+)?data\s+to", re.IGNORECASE),

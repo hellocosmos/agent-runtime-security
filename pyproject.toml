@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "agent-runtime-security"
 version = "0.3.0"
-description = "Python SDK for agent input scanning, tool-call guardrails, and audit logs"
+description = "Python SDK with optional HTTP API for agent input scanning, tool-call guardrails, and audit logs"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 readme = "README.md"
@@ -43,12 +43,23 @@ Issues = "https://github.com/hellocosmos/agent-runtime-security/issues"
 pdf = ["pymupdf>=1.23.0"]
 mcp = ["mcp>=1.0.0"]
 yaml = ["pyyaml>=6.0"]
+api = [
+  "fastapi>=0.115.0,<1.0.0",
+  "uvicorn[standard]>=0.30.0,<1.0.0",
+  "pyyaml>=6.0",
+]
 langchain = ["langchain-core>=0.3.0"]
 langgraph = ["langchain-core>=0.3.0", "langgraph>=0.3.0"]
-dev = ["pytest>=8.0.0", "pytest-asyncio>=0.25.0"]
+dev = ["pytest>=8.0.0", "pytest-asyncio>=0.25.0", "httpx>=0.27.0"]
+
+[project.scripts]
+asr-api = "asr.api.main:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"asr.api.presets" = ["*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

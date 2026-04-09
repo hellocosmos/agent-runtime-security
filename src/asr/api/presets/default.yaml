@@ -1,0 +1,14 @@
+version: 1
+mode: enforce
+domain_allowlist:
+  - api.internal.com
+file_path_allowlist: []
+pii_action: warn
+block_egress: true
+tool_blocklist:
+  - shell_exec
+  - eval
+capability_policy:
+  network_send: warn
+  shell_exec: block
+default_action: warn

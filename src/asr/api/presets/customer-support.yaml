@@ -1,0 +1,39 @@
+version: 1
+mode: warn
+block_egress: true
+domain_allowlist:
+  - "mail.company.com"
+  - "crm.company.com"
+  - "helpdesk.company.com"
+  - "support.company.com"
+  - "smtp.company.com"
+pii_action: block
+file_path_allowlist:
+  - "/srv/support-exports"
+  - "/tmp/support-safe"
+tool_blocklist:
+  - shell_exec
+  - eval
+  - exec
+  - os_command
+  - sudo
+  - admin_api
+  - delete_database
+  - drop_table
+  - delete_customer
+  - export_all_customers
+  - bulk_delete
+capability_policy:
+  network_send: warn
+  shell_exec: block
+  credential_access: block
+  secret_access: block
+  admin_action: block
+  permission_change: block
+  filesystem_write: warn
+  filesystem_delete: block
+  database_write: warn
+  database_delete: block
+  email_send: warn
+  bulk_export: block
+default_action: warn

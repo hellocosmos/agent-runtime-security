@@ -6,4 +6,5 @@ dist/
 .DS_Store
 logs/
 site/
+secrets/
 CLAUDE.md

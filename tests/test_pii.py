@@ -15,6 +15,10 @@ class TestDetectPii:
         hits = detect_pii("Call +1-555-123-4567")
         assert any(h["type"] == "phone" for h in hits)
 
+    def test_long_order_number_not_phone(self):
+        hits = detect_pii("주문번호: 0123456789012")
+        assert not any(h["type"] == "phone" for h in hits)
+
     def test_detect_api_key(self):
         hits = detect_pii("api_key=sk-abc123def456ghi789jkl012mno345pqr678")
         assert any(h["type"] == "api_key" for h in hits)

@@ -1,0 +1,46 @@
+version: 1
+mode: enforce
+block_egress: true
+domain_allowlist:
+  - "*.internal.company.com"
+  - "intranet.company.com"
+  - "api.notion.com"
+  - "api.atlassian.com"
+  - "slack.com"
+  - "hooks.slack.com"
+  - "db.internal.company.com"
+  - "api.internal.company.com"
+pii_action: warn
+file_path_allowlist:
+  - "/srv/mcp"
+  - "/tmp/mcp-safe"
+  - "/home/agent/workspace"
+tool_blocklist:
+  - shell_exec
+  - eval
+  - exec
+  - os_command
+  - subprocess_run
+  - system_call
+  - sudo
+  - admin_api
+  - delete_database
+  - drop_table
+  - modify_permissions
+  - create_user
+  - reset_password
+capability_policy:
+  network_send: block
+  webhook_call: block
+  email_send: warn
+  shell_exec: block
+  filesystem_write: warn
+  filesystem_delete: block
+  credential_access: block
+  secret_access: block
+  admin_action: block
+  permission_change: block
+  database_write: warn
+  database_delete: block
+  bulk_export: block
+default_action: warn

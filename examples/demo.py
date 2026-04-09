@@ -67,7 +67,7 @@ async def run_case(
 
 
 async def main() -> None:
-    print("TrapDefense / Agent Runtime Security demo rehearsal")
+    print("Agent Runtime Security demo rehearsal")
     print(f"policy={POLICY_PATH}")
 
     shadow_events, shadow_post_webhook, shadow_send_email, shadow_read_file, shadow_search = build_demo_tools("shadow")

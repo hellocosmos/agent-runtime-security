@@ -2,6 +2,20 @@
 
 Follows [Keep a Changelog](https://keepachangelog.com/) format.
 
+## [Unreleased]
+
+### Added
+
+- **First-party HTTP API extension** — `asr.api` now ships inside the main repository
+  - FastAPI app factory and `asr-api` CLI entrypoint
+  - Packaged starter presets for `default`, `internal-agent`, `mcp-server`, and `customer-support`
+  - API-focused scanner extensions for SQL injection, command injection, path traversal, SSRF, and exfiltration signals
+  - Additional PII profiles for `payment`, `jp`, and `cn`
+
+### Changed
+
+- **Documentation refresh** — README, Korean README, example docs, and API extension docs now describe the repository as a unified SDK plus optional HTTP extension
+
 ## [0.3.0] - 2026-04-07
 
 ### Added

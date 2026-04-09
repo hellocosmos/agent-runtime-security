@@ -96,8 +96,15 @@ def detect_pii(text: str, profiles: list[str] | None = None) -> list[dict]:
 
     if active_types is None or "phone" in active_types:
         for match in _PHONE_RE.finditer(text):
+            raw = match.group()
             digits = re.sub(r"\D", "", match.group())
-            if len(digits) >= 10:
+            has_separator = any(ch in raw for ch in (" ", "-", "(", ")", "+"))
+            # Contiguous long digit strings (for example order numbers) should
+            # not be treated as phone numbers unless the length looks like a
+            # real domestic/mobile pattern.
+            if has_separator and len(digits) >= 10:
+                hits.append({"type": "phone", "value": match.group(), "start": match.start(), "end": match.end()})
+            elif not has_separator and 10 <= len(digits) <= 11:
                 hits.append({"type": "phone", "value": match.group(), "start": match.start(), "end": match.end()})
 
     if active_types is None or "api_key" in active_types:

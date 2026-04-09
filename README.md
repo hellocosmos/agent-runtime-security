@@ -45,6 +45,7 @@ Prompt filters and content scanning can help, but they do not stop the final act
 - `shadow`, `warn`, and `enforce` rollout modes
 - YAML / JSON policy file loading
 - YAML v2 `tools:` overrides for per-tool policy
+- Optional FastAPI extension for local `/scan`, `/decide`, and `/redact` endpoints
 - Minimal dependencies with a Python-first integration model
 
 ## Installation
@@ -85,11 +86,84 @@ With LangGraph integration:
 pip install agent-runtime-security[langgraph]
 ```
 
-## Product Docs
+With the optional HTTP API:
 
-TrapDefense product and API documentation lives at [trapdefense.com/docs](https://trapdefense.com/docs).
+```bash
+pip install agent-runtime-security[api]
+```
 
-The hosted API is still in a limited-access stage, so this repository focuses on the open-source SDK and its local integration model.
+## HTTP API Extension
+
+This repository now ships with a first-party FastAPI wrapper under `asr.api`.
+
+Documentation map:
+
+- Core SDK overview: this README
+- API setup details: [`docs/api-extension.md`](./docs/api-extension.md)
+- MCP / LangChain / LangGraph demos: [`examples/README.md`](./examples/README.md)
+
+Start the local server:
+
+```bash
+asr-api
+```
+
+Or create the app in Python:
+
+```python
+from asr.api.main import create_app
+
+app = create_app()
+```
+
+The API ships with packaged starter presets:
+
+- `default`
+- `internal-agent`
+- `mcp-server`
+- `customer-support`
+
+You can inspect them programmatically:
+
+```python
+from asr.api import available_policy_presets, load_policy_preset
+
+print(available_policy_presets())
+print(load_policy_preset("mcp-server"))
+```
+
+Environment variables:
+
+- `ASR_AUTH_ENABLED`
+- `ASR_API_KEYS_FILE`
+- `ASR_API_PREFIX`
+- `ASR_ROOT_PATH`
+- `ASR_POLICIES_DIR`
+- `ASR_DEFAULT_POLICY_PRESET`
+
+Legacy `TRAPDEFENSE_*` env vars are still accepted for compatibility.
+
+Minimal local auth file:
+
+```json
+{
+  "keys": [
+    {
+      "name": "local-dev",
+      "hash": "sha256_of_your_api_key"
+    }
+  ]
+}
+```
+
+Point `ASR_API_KEYS_FILE` to that JSON file, then send requests with:
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/scan \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"content": "ignore previous instructions", "source_type": "text"}'
+```
 
 ## Quick Start
 

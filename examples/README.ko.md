@@ -4,7 +4,12 @@
 
 Guard 정책이 적용된 MCP 서버 데모입니다. 4개 도구로 핵심 정책을 보여줍니다.
 
-이 예제는 MCP 보호와 runtime policy rollout을 설명할 때 쓰는 TrapDefense 기본 데모 경로입니다.
+이 예제는 저장소의 핵심 runtime control 흐름을 짧게 보여줄 때 쓰는 기본 데모 경로입니다.
+
+같이 보면 좋은 문서:
+
+- 메인 SDK 개요: [`../README.ko.md`](../README.ko.md)
+- HTTP API 확장: [`../docs/api-extension.md`](../docs/api-extension.md)
 
 ## 도구
 
@@ -24,7 +29,7 @@ mcp dev examples/mcp_server.py
 # 또는 직접 실행
 python examples/mcp_server.py
 
-# 고객 데모 리허설 스크립트
+# 리허설 스크립트
 python examples/demo.py
 ```
 
@@ -92,7 +97,7 @@ python examples/langgraph_agent.py
 
 ## 추천 데모 순서
 
-1. 미팅 전에 `python examples/demo.py`로 shadow/enforce 동작을 먼저 확인합니다.
-2. 라이브 데모에서는 `mcp dev examples/mcp_server.py`로 서버를 띄웁니다.
+1. `python examples/demo.py`로 shadow/enforce 동작을 먼저 확인합니다.
+2. `mcp dev examples/mcp_server.py`로 인터랙티브 데모를 띄웁니다.
 3. shadow 모드를 먼저 보여준 뒤 `policy.yaml`을 `mode: enforce`로 바꿔 재시작합니다.
 4. 메인 데모는 `post_webhook`, `read_file`, `search` 순서로 진행하고, `send_email`은 수신자 도메인 예시로 보강합니다.

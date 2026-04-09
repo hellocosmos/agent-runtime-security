@@ -4,7 +4,12 @@
 
 This is a demo MCP server protected by Guard policies. It uses four tools to show the core behavior of the SDK.
 
-This example is the default TrapDefense demo path for customer conversations about MCP protection and runtime policy rollout.
+Use this example when you want a compact walkthrough of the repository's core runtime controls.
+
+Related docs:
+
+- Main SDK overview: [`../README.md`](../README.md)
+- HTTP API extension: [`../docs/api-extension.md`](../docs/api-extension.md)
 
 The policy file already uses YAML `version: 2`, so global defaults and `tools:` overrides are both part of the demo.
 
@@ -26,7 +31,7 @@ mcp dev examples/mcp_server.py
 # Or run directly
 python examples/mcp_server.py
 
-# Rehearsal script for the customer demo
+# Rehearsal script
 python examples/demo.py
 ```
 
@@ -101,8 +106,8 @@ Both examples run without an LLM and demonstrate allow, block, and PII redaction
 
 ## Suggested Demo Order
 
-1. Run `python examples/demo.py` to confirm shadow/enforce behavior before the meeting.
-2. Start `mcp dev examples/mcp_server.py` for the live demo.
+1. Run `python examples/demo.py` to confirm shadow/enforce behavior first.
+2. Start `mcp dev examples/mcp_server.py` for the interactive demo.
 3. Show shadow mode first, then switch `policy.yaml` to `mode: enforce`.
 4. Use `post_webhook`, `read_file`, and `search` in that order for the main demo, then `send_email` as an optional recipient-domain example.
 

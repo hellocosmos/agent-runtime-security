@@ -1,0 +1,43 @@
+version: 1
+mode: enforce
+block_egress: true
+domain_allowlist:
+  - "*.internal.company.com"
+  - "intranet.company.com"
+  - "api.notion.com"
+  - "api.atlassian.com"
+  - "slack.com"
+  - "hooks.slack.com"
+  - "calendar.google.com"
+  - "www.googleapis.com"
+  - "sso.company.com"
+  - "login.microsoftonline.com"
+pii_action: warn
+file_path_allowlist:
+  - "/srv/agent-workspace"
+  - "/tmp/agent-safe"
+  - "/home/agent/documents"
+tool_blocklist:
+  - shell_exec
+  - eval
+  - exec
+  - os_command
+  - sudo
+  - admin_api
+  - delete_database
+  - drop_table
+  - modify_permissions
+capability_policy:
+  network_send: block
+  shell_exec: block
+  credential_access: block
+  secret_access: block
+  admin_action: block
+  permission_change: block
+  filesystem_write: warn
+  filesystem_delete: block
+  database_write: warn
+  database_delete: block
+  email_send: warn
+  bulk_export: block
+default_action: warn
