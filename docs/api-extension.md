@@ -42,12 +42,13 @@ Minimal API key store:
 
 Set `ASR_API_KEYS_FILE` to that JSON file. When `ASR_AUTH_ENABLED=false`, the auth dependency is bypassed for local development.
 
-Default starter presets:
+The repository now includes the full public API kit:
 
-- `default`
-- `internal-agent`
-- `mcp-server`
-- `customer-support`
+- FastAPI app under `src/asr/api`
+- 17 packaged policy presets
+- full API docs under `docs/api`
+- eval fixtures and runner under `eval/api`
+- Docker and nginx deployment examples under `deploy/api`
 
 Preset lookup order:
 
@@ -71,3 +72,5 @@ Related files:
 - Service adapter: [`../src/asr/api/service.py`](../src/asr/api/service.py)
 - Packaged presets: [`../src/asr/api/presets`](../src/asr/api/presets)
 - API tests: [`../tests/test_api.py`](../tests/test_api.py)
+- Extended docs: [`./api/overview.md`](./api/overview.md)
+- Deploy docs: [`../deploy/api/DEPLOYMENT.md`](../deploy/api/DEPLOYMENT.md)

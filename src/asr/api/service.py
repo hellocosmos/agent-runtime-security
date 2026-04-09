@@ -11,13 +11,13 @@ from typing import Any
 
 from asr import Guard, load_policy_file
 from asr.api.config import get_settings
-from asr.api.enhanced_pii import install_extended_pii
-from asr.api.enhanced_scanner import RuntimeScanner
+from asr.api.enhanced_pii import install_enhanced_pii
+from asr.api.enhanced_scanner import EnhancedScanner
 
 
 _PRESET_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
-install_extended_pii()
+install_enhanced_pii()
 
 
 def _serialize_dataclass(value: Any) -> Any:
@@ -114,7 +114,7 @@ def _load_policy_config(
 
 
 def scan_content(*, content: str, source_type: str, source_ref: str | None = None) -> dict[str, Any]:
-    scanner = RuntimeScanner()
+    scanner = EnhancedScanner()
     result = scanner.scan(content, source_type=source_type, source_ref=source_ref)
     return _serialize_dataclass(result)
 

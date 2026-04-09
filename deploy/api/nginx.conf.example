@@ -1,0 +1,22 @@
+# Add the limit zone in the main nginx http {} block.
+# limit_req_zone $binary_remote_addr zone=asr_api:10m rate=10r/s;
+#
+# This example keeps path-based routing and exposes the API at
+# https://your-domain.example/api.
+
+location = /api {
+    return 301 /api/;
+}
+
+location /api/ {
+    limit_req zone=asr_api burst=20 nodelay;
+    client_max_body_size 256k;
+
+    proxy_pass http://127.0.0.1:8000/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Request-ID $request_id;
+    proxy_read_timeout 30s;
+}

@@ -1,0 +1,84 @@
+# ============================================================
+# TrapDefense Preset: Sales Operations Agent
+# ============================================================
+# Target: Sales ops agents working with CRM, outbound email,
+#         contact lists, pipeline management, and reporting
+#
+# Posture:
+#   - CRM read/write allowed with audit logging
+#   - Bulk contact export strictly blocked
+#   - Outbound email allowed to known domains only
+#   - Enrichment tools allowed with logging
+#   - PII in CRM data must be handled carefully
+# ============================================================
+
+version: 1
+mode: enforce
+
+block_egress: true
+
+domain_allowlist:
+  # CRM platforms
+  - "api.salesforce.com"
+  - "api.hubspot.com"
+  - "api.pipedrive.com"
+  - "*.zoho.com"
+  # Email services
+  - "smtp.company.com"
+  - "mail.company.com"
+  - "api.sendgrid.com"
+  # Enrichment
+  - "api.clearbit.com"
+  - "api.apollo.io"
+  # Internal
+  - "*.internal.company.com"
+  # Collaboration
+  - "hooks.slack.com"
+  - "docs.google.com"
+  - "sheets.google.com"
+
+pii_action: warn
+
+file_path_allowlist:
+  - "/srv/sales-workspace"
+  - "/tmp/sales-exports"
+
+tool_blocklist:
+  - shell_exec
+  - eval
+  - exec
+  - os_command
+  - sudo
+  - admin_api
+  - delete_database
+  - drop_table
+  - modify_permissions
+  - export_all_contacts
+  - bulk_contact_enrichment
+  - delete_pipeline
+  - modify_pricing_rules
+
+capability_policy:
+  # Communication
+  network_send: warn
+  webhook_call: warn
+  email_send: warn
+  # Security
+  credential_access: block
+  secret_access: block
+  admin_action: block
+  permission_change: block
+  # Data
+  database_write: warn
+  database_delete: block
+  bulk_export: block
+  # System
+  shell_exec: block
+  filesystem_write: warn
+  filesystem_delete: block
+  # Sales-specific
+  crm_write: warn
+  contact_export: block
+  pipeline_modify: warn
+
+default_action: warn

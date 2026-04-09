@@ -1,22 +1,46 @@
+# ============================================================
+# TrapDefense Preset: Internal Agent Protection
+# ============================================================
+# 대상: 직원용 업무 에이전트 (사내 문서 조회, 일정 관리, 업무 자동화 등)
+#
+# mcp-server보다 약간 느슨: 사내 도구 사용은 허용하되,
+# 외부 전송과 민감정보 노출만 엄격히 통제합니다.
+#
+# 사용법:
+#   POST /api/v1/decide
+#   { "tool_name": "search_docs", "args": {...}, "policy_preset": "internal-agent" }
+# ============================================================
+
 version: 1
 mode: enforce
+
+# ── 외부 전송 통제 ──────────────────────────────────────────
 block_egress: true
+
 domain_allowlist:
+  # 사내 인프라
   - "*.internal.company.com"
   - "intranet.company.com"
+  # 업무용 SaaS
   - "api.notion.com"
   - "api.atlassian.com"
   - "slack.com"
   - "hooks.slack.com"
   - "calendar.google.com"
   - "www.googleapis.com"
+  # SSO/인증
   - "sso.company.com"
   - "login.microsoftonline.com"
+
+# ── 민감정보 보호 ───────────────────────────────────────────
 pii_action: warn
+
 file_path_allowlist:
   - "/srv/agent-workspace"
   - "/tmp/agent-safe"
   - "/home/agent/documents"
+
+# ── 고위험 도구 차단 ────────────────────────────────────────
 tool_blocklist:
   - shell_exec
   - eval
@@ -27,6 +51,7 @@ tool_blocklist:
   - delete_database
   - drop_table
   - modify_permissions
+
 capability_policy:
   network_send: block
   shell_exec: block
@@ -40,4 +65,5 @@ capability_policy:
   database_delete: block
   email_send: warn
   bulk_export: block
+
 default_action: warn

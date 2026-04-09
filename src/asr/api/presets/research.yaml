@@ -1,0 +1,94 @@
+# ============================================================
+# TrapDefense Preset: Research / R&D Agent
+# ============================================================
+# 대상: 연구/R&D 에이전트 (논문 검색, 실험 데이터 분석,
+#       지적재산 관리, 기술 문서 작성, 코드 분석 등)
+#
+# 특징:
+#   - 외부 리서치 소스 접근 허용 (학술 DB, 논문 등)
+#   - 지적재산(IP) 유출 방지가 핵심
+#   - 실험 데이터/코드 외부 전송 차단
+#   - 비교적 자유로운 파일 접근 (실험 데이터)
+#
+# 사용법:
+#   POST /api/v1/decide
+#   { "tool_name": "search_papers", "args": {...}, "policy_preset": "research" }
+# ============================================================
+
+version: 1
+mode: enforce
+
+# ── 외부 전송 통제 ──��──────────────────────────────────────────
+block_egress: true
+
+domain_allowlist:
+  # 사내 연구 인프라
+  - "*.internal.company.com"
+  - "lab.company.com"
+  - "jupyter.company.com"
+  - "git.company.com"
+  # 학술 리서치
+  - "api.semanticscholar.org"
+  - "api.crossref.org"
+  - "api.openalex.org"
+  - "arxiv.org"
+  - "pubmed.ncbi.nlm.nih.gov"
+  # 패키지/라이브러리
+  - "pypi.org"
+  - "registry.npmjs.org"
+  - "github.com"
+  - "api.github.com"
+  # 클라우드 컴퓨팅
+  - "*.googleapis.com"
+  - "*.amazonaws.com"
+
+# ── 민감��보 보호 ───────────────��─────────────────────────────
+pii_action: warn
+
+file_path_allowlist:
+  - "/srv/research"
+  - "/tmp/research-staging"
+  - "/data/experiments"
+  - "/home/agent/notebooks"
+
+# ── 고위험 도구 차단 ──────────��────────────────────────────────
+tool_blocklist:
+  - eval
+  - exec
+  - sudo
+  - admin_api
+  - delete_database
+  - drop_table
+  - modify_permissions
+  - share_ip_externally   # IP 외부 공유
+  - publish_unpublished   # 미발표 연구 공개
+  - export_source_code    # 소스 코드 내보내기
+
+capability_policy:
+  # 외부 전송 — 리서치 특성상 일부 허용
+  network_send: warn       # 논문/데이터 다운로드에 필요
+  webhook_call: warn
+  email_send: warn
+
+  # 시스템 ���근 — 실험에 필요
+  shell_exec: warn         # 실험 스크립트 실행
+  filesystem_write: warn
+  filesystem_delete: warn
+
+  # 권한/인증
+  credential_access: block
+  secret_access: block
+  admin_action: block
+  permission_change: block
+
+  # 데이터 접근
+  database_write: warn
+  database_delete: block
+  bulk_export: warn        # 실험 데이터 내보내기 허용
+
+  # 연구 특화
+  code_execute: warn       # 코드 실행 — 로깅
+  data_download: warn      # 데이터 다운로드 — 로깅
+  model_train: warn        # 모델 학습 — 로깅
+
+default_action: warn

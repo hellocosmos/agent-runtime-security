@@ -1,0 +1,99 @@
+# ============================================================
+# TrapDefense Preset: E-commerce Agent
+# ============================================================
+# 대상: 이커머스 에이전트 (주문 처리, 재고 관리, 고객 문의,
+#       결제 확인, 배송 추적, 프로모션 관리 ��)
+#
+# 특징:
+#   - 결제/카드 정보 PII 엄격 통제 (PCI DSS)
+#   - 주문/가격 변경에 대한 감사 추적
+#   - 고객 데이터 대량 내보내기 차단
+#   - 프로모션/할인 조작 방지
+#
+# 관련 규제: PCI DSS, 전자상거래법, 개인정보보호법
+#
+# 사용법:
+#   POST /api/v1/decide
+#   { "tool_name": "process_refund", "args": {...}, "policy_preset": "ecommerce" }
+# ============================================================
+
+version: 1
+mode: enforce
+
+# ── 외부 전송 통제 ─────────────────────────────────────────────
+block_egress: true
+
+domain_allowlist:
+  # 사내 시스템
+  - "*.internal.company.com"
+  - "shop.company.com"
+  - "admin.company.com"
+  # 결제 프로세서
+  - "api.stripe.com"
+  - "api.paypal.com"
+  - "api.toss.im"
+  - "api.inicis.com"
+  # 배송 추적
+  - "api.fedex.com"
+  - "api.ups.com"
+  - "api.cjlogistics.com"
+  - "api.hanjin.com"
+  # 마케팅/알림
+  - "api.mailchimp.com"
+  - "hooks.slack.com"
+
+# ── 민감정보 보호 ───────────────────────��──────────────────────
+# 결제 정보 + 고객 PII 보호
+pii_action: block
+
+file_path_allowlist:
+  - "/srv/ecommerce-workspace"
+  - "/tmp/ecommerce-safe"
+
+# ── 고위험 도구 차단 ────────────────────────────��──────────────
+tool_blocklist:
+  - shell_exec
+  - eval
+  - exec
+  - os_command
+  - sudo
+  - admin_api
+  - delete_database
+  - drop_table
+  - modify_permissions
+  - delete_all_orders     # 전체 주문 삭제
+  - modify_price_global   # 전체 ���격 변경
+  - bulk_refund           # 대량 환불
+  - export_all_customers  # 전체 고객 내보내기
+  - modify_payment_config # 결제 ��정 변경
+
+capability_policy:
+  # 외부 전송
+  network_send: warn       # 배송/결제 API에 필요
+  webhook_call: warn
+  email_send: warn         # 주문 확인 메일 등
+
+  # 시스템 접근
+  shell_exec: block
+  filesystem_write: warn
+  filesystem_delete: block
+
+  # 권한/인증
+  credential_access: block
+  secret_access: block
+  admin_action: block
+  permission_change: block
+
+  # 데이터 접근
+  database_write: warn
+  database_delete: block
+  bulk_export: block
+
+  # 이커머스 특화
+  order_modify: warn        # 주문 수정 — 감사 로깅
+  price_modify: warn        # 가격 변경 — 감사 로깅
+  refund_process: warn      # 환불 처리 — 감사 로깅
+  inventory_modify: warn    # 재고 변경 — 감사 로깅
+  promotion_modify: warn    # 프로모션 변경 — 감사 로깅
+
+default_action: warn

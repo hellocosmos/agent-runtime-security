@@ -1,4 +1,4 @@
-"""Tests for packaged starter policy presets."""
+"""Tests for packaged API policy presets."""
 
 from __future__ import annotations
 
@@ -8,7 +8,25 @@ from asr.api import available_policy_presets, load_policy_preset
 
 def test_expected_packaged_presets_exist():
     presets = available_policy_presets()
-    assert presets == ["customer-support", "default", "internal-agent", "mcp-server"]
+    assert presets == [
+        "browser-agent",
+        "customer-support",
+        "data-pipeline",
+        "default",
+        "developer-agent",
+        "devops",
+        "ecommerce",
+        "executive-assistant",
+        "finance",
+        "healthcare",
+        "hr-agent",
+        "internal-agent",
+        "legal",
+        "mcp-server",
+        "research",
+        "sales-ops-agent",
+        "security-ops-agent",
+    ]
 
 
 def test_default_preset_loads_into_guard():

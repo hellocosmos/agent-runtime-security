@@ -1,0 +1,87 @@
+# ============================================================
+# TrapDefense Preset: Security Operations Agent
+# ============================================================
+# Target: SecOps / SOC agents for alert triage, IOC lookup,
+#         SIEM interaction, threat intel, and incident response
+#
+# Posture:
+#   - Threat intel and IOC lookups allowed
+#   - SIEM read access allowed with logging
+#   - Credential dumping and secret export strictly blocked
+#   - Network scanning and active exploitation tools blocked
+#   - Incident evidence must be preserved (no deletion)
+# ============================================================
+
+version: 1
+mode: enforce
+
+block_egress: true
+
+domain_allowlist:
+  # SIEM and SOAR
+  - "*.splunk.com"
+  - "api.elastic.co"
+  - "*.sentinel.azure.com"
+  - "api.crowdstrike.com"
+  # Threat intel
+  - "www.virustotal.com"
+  - "api.abuseipdb.com"
+  - "otx.alienvault.com"
+  - "api.shodan.io"
+  - "urlhaus-api.abuse.ch"
+  # Internal
+  - "*.internal.company.com"
+  - "soc.company.com"
+  # Collaboration
+  - "hooks.slack.com"
+  - "api.pagerduty.com"
+
+pii_action: warn
+
+file_path_allowlist:
+  - "/srv/secops"
+  - "/tmp/incident-staging"
+  - "/var/log"
+
+tool_blocklist:
+  - eval
+  - exec
+  - sudo
+  - admin_api
+  - modify_permissions
+  - modify_iam
+  - create_user
+  - reset_password
+  - credential_dump
+  - export_secrets
+  - delete_evidence
+  - delete_logs
+  - network_scan
+  - port_scan
+  - exploit_execute
+
+capability_policy:
+  # Network — IOC lookups and SIEM queries need network
+  network_send: warn
+  webhook_call: warn
+  email_send: warn
+  # System
+  shell_exec: warn
+  filesystem_write: warn
+  filesystem_delete: block
+  # Security — strict on credentials
+  credential_access: block
+  secret_access: block
+  admin_action: block
+  permission_change: block
+  # Data
+  database_write: warn
+  database_delete: block
+  bulk_export: warn
+  # SecOps-specific
+  ioc_lookup: warn
+  siem_query: warn
+  alert_triage: warn
+  incident_modify: warn
+
+default_action: warn

@@ -47,7 +47,14 @@ def get_settings() -> APISettings:
     )
     return APISettings(
         app_name="Agent Runtime Security API",
-        environment=_env("ASR_ENV", "TRAPDEFENSE_ENV", default="development") or "development",
+        environment=_env(
+            "ASR_ENV",
+            "ASR_ENVIRONMENT",
+            "TRAPDEFENSE_ENV",
+            "TRAPDEFENSE_ENVIRONMENT",
+            default="development",
+        )
+        or "development",
         api_prefix=_env("ASR_API_PREFIX", "TRAPDEFENSE_API_PREFIX", default="/v1") or "/v1",
         root_path=_env("ASR_ROOT_PATH", "TRAPDEFENSE_ROOT_PATH", default="") or "",
         log_level=_env("ASR_LOG_LEVEL", "TRAPDEFENSE_LOG_LEVEL", default="INFO") or "INFO",

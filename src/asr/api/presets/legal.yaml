@@ -1,0 +1,92 @@
+# ============================================================
+# TrapDefense Preset: Legal / Compliance Agent
+# ============================================================
+# 대상: 법률/컴플라이언스 에이전트 (계약서 검토, 법�� 리서치,
+#       규정 준수 확인, 감사 지원, 소송 관리 등)
+#
+# 특징:
+#   - 변호사-의뢰인 특권(attorney-client privilege) 보호
+#   - 계약/소송 정보 외부 유출 완전 차단
+#   - PII 엄격 통제 (법적 문서에 개인정보 포함)
+#   - 문서 수정/삭제 차단 (증거 보존)
+#
+# 관련 규제: 변호사법, 개인정보보호법, GDPR, 전자문서법
+#
+# 사용법:
+#   POST /api/v1/decide
+#   { "tool_name": "search_contracts", "args": {...}, "policy_preset": "legal" }
+# ============================================================
+
+version: 1
+mode: enforce
+
+# ── 외부 전송 통제 (최엄격) ────────────────────────────────────
+block_egress: true
+
+domain_allowlist:
+  # 사내 법무 시스템
+  - "*.internal.company.com"
+  - "legal.company.com"
+  - "contracts.company.com"
+  # 법률 리서치
+  - "api.westlaw.com"
+  - "api.lexisnexis.com"
+  - "lbox.kr"
+  # 전자서명
+  - "api.docusign.com"
+  - "api.adobesign.com"
+
+# ── 민감정보 보호 (최엄격) ─────────────────────────────────────
+# 법적 문���의 개인정보/기밀 유출은 치명적 → block
+pii_action: block
+
+file_path_allowlist:
+  - "/srv/legal-workspace"
+  - "/tmp/legal-safe"
+
+# ── 고위험 도구 차단 ───────────────────────────────────────────
+tool_blocklist:
+  - shell_exec
+  - eval
+  - exec
+  - os_command
+  - sudo
+  - admin_api
+  - delete_database
+  - drop_table
+  - modify_permissions
+  - delete_contract       # 계약서 삭제
+  - delete_case           # 소송 기록 삭제
+  - modify_evidence       # 증거 수정
+  - bulk_delete
+  - export_all_contracts  # 전체 계약서 내보내기
+  - share_externally      # 외부 공유
+
+capability_policy:
+  # 외부 전송
+  network_send: block
+  webhook_call: block
+  email_send: warn         # 법무 커뮤니케이션에 필요
+
+  # 시스템 접근
+  shell_exec: block
+  filesystem_write: warn   # 법적 문서 작성
+  filesystem_delete: block # 증거 보존 — 삭제 차단
+
+  # 권한/인증
+  credential_access: block
+  secret_access: block
+  admin_action: block
+  permission_change: block
+
+  # 데이터 접근
+  database_write: warn
+  database_delete: block
+  bulk_export: block
+
+  # 법률 특화
+  contract_access: warn     # 계약서 접근 — 감사 로깅
+  case_access: warn         # 소송 기록 접근 — 감사 로깅
+  document_modify: warn     # 문서 수정 — 버전 관리 필수
+
+default_action: warn

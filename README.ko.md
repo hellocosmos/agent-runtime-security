@@ -110,12 +110,11 @@ from asr.api.main import create_app
 app = create_app()
 ```
 
-기본 제공 preset:
+전체 preset 라이브러리 포함:
 
-- `default`
-- `internal-agent`
-- `mcp-server`
-- `customer-support`
+- 범용: `default`, `internal-agent`, `mcp-server`, `customer-support`
+- 산업별: `finance`, `healthcare`, `devops`, `data-pipeline`, `hr-agent`, `legal`, `ecommerce`, `research`
+- 역할별: `developer-agent`, `browser-agent`, `sales-ops-agent`, `security-ops-agent`, `executive-assistant`
 
 코드에서 preset 확인:
 
@@ -136,6 +135,12 @@ print(load_policy_preset("mcp-server"))
 - `ASR_DEFAULT_POLICY_PRESET`
 
 호환성을 위해 기존 `TRAPDEFENSE_*` 환경 변수도 계속 읽습니다.
+
+추가 API 문서:
+
+- 개요: [`docs/api/overview.md`](./docs/api/overview.md)
+- 레퍼런스: [`docs/api/api-reference.md`](./docs/api/api-reference.md)
+- 배포 가이드: [`deploy/api/DEPLOYMENT.md`](./deploy/api/DEPLOYMENT.md)
 
 로컬 인증 파일 예시:
 
@@ -365,9 +370,9 @@ tool_node = create_guarded_tool_node(
 - Semantic manipulation의 완전한 탐지
 - 장기 메모리 오염 방어
 - 멀티에이전트 systemic risk 관리
-- 완전한 hosted security platform / dashboard
+- 완전한 멀티테넌트 control plane / dashboard
 
-이런 부분은 향후 제품 레이어가 될 수 있지만, 현재 SDK 범위에는 의도적으로 포함하지 않습니다.
+이런 부분은 향후 아키텍처 레이어가 될 수 있지만, 현재 SDK 범위에는 의도적으로 포함하지 않습니다.
 
 ## 예제 서버
 

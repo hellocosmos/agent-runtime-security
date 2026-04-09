@@ -1,0 +1,83 @@
+# ============================================================
+# TrapDefense Preset: Developer Agent
+# ============================================================
+# Target: Developer-facing coding agents and repo assistants
+#         (code search, file editing, git operations, package management,
+#          build/test execution, secret scanning)
+#
+# Posture:
+#   - Shell execution allowed with warning (developers need it)
+#   - Secrets and credential paths strictly blocked
+#   - External network access restricted to dev tooling
+#   - File access scoped to workspace paths
+# ============================================================
+
+version: 1
+mode: enforce
+
+block_egress: true
+
+domain_allowlist:
+  # Source control
+  - "github.com"
+  - "api.github.com"
+  - "gitlab.com"
+  - "*.gitlab.io"
+  - "bitbucket.org"
+  # Package registries
+  - "registry.npmjs.org"
+  - "pypi.org"
+  - "files.pythonhosted.org"
+  - "rubygems.org"
+  - "crates.io"
+  - "pkg.go.dev"
+  - "maven.org"
+  # Container
+  - "*.docker.io"
+  - "ghcr.io"
+  # Documentation
+  - "docs.python.org"
+  - "developer.mozilla.org"
+  - "stackoverflow.com"
+
+pii_action: warn
+
+file_path_allowlist:
+  - "/home/agent/workspace"
+  - "/srv/repos"
+  - "/tmp/build"
+
+tool_blocklist:
+  - sudo
+  - admin_api
+  - delete_database
+  - drop_table
+  - modify_permissions
+  - modify_iam
+  - create_user
+  - reset_password
+  - send_email
+  - send_mail
+
+capability_policy:
+  # Shell — developers need it, but log everything
+  shell_exec: warn
+  # Network — scoped to dev tools
+  network_send: warn
+  webhook_call: warn
+  email_send: block
+  # Secrets — strict
+  credential_access: block
+  secret_access: block
+  # File system — moderate
+  filesystem_write: warn
+  filesystem_delete: warn
+  # Admin
+  admin_action: block
+  permission_change: block
+  # Data
+  database_write: warn
+  database_delete: block
+  bulk_export: warn
+
+default_action: warn

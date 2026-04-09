@@ -116,12 +116,11 @@ from asr.api.main import create_app
 app = create_app()
 ```
 
-The API ships with packaged starter presets:
+The API ships with the full preset library:
 
-- `default`
-- `internal-agent`
-- `mcp-server`
-- `customer-support`
+- General: `default`, `internal-agent`, `mcp-server`, `customer-support`
+- Industry: `finance`, `healthcare`, `devops`, `data-pipeline`, `hr-agent`, `legal`, `ecommerce`, `research`
+- Role: `developer-agent`, `browser-agent`, `sales-ops-agent`, `security-ops-agent`, `executive-assistant`
 
 You can inspect them programmatically:
 
@@ -142,6 +141,12 @@ Environment variables:
 - `ASR_DEFAULT_POLICY_PRESET`
 
 Legacy `TRAPDEFENSE_*` env vars are still accepted for compatibility.
+
+Additional API docs:
+
+- Overview: [`docs/api/overview.md`](./docs/api/overview.md)
+- Reference: [`docs/api/api-reference.md`](./docs/api/api-reference.md)
+- Deployment: [`deploy/api/DEPLOYMENT.md`](./deploy/api/DEPLOYMENT.md)
 
 Minimal local auth file:
 
@@ -396,9 +401,9 @@ Supported patterns:
 - Full semantic manipulation detection
 - Long-term memory poisoning defense
 - Systemic multi-agent risk management
-- A full hosted security platform or dashboard
+- A full multi-tenant control plane or dashboard
 
-Those may become future product layers, but they are intentionally outside the current SDK scope.
+Those may become future architecture layers, but they are intentionally outside the current SDK scope.
 
 ## Example Server
 

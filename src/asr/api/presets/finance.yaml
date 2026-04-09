@@ -1,0 +1,94 @@
+# ============================================================
+# TrapDefense Preset: Finance / FinTech Agent
+# ============================================================
+# 대상: 금융 서비스 에이전트 (결제 처리, 계좌 조회, 거래 실행,
+#       금융 데이터 분석, 핀테크 자동화 등)
+#
+# 특징:
+#   - PII 최엄격 (block) — 고객 금융 정보 유출 시 규제 위반
+#   - 대량 데이터 내보내기 완전 차단
+#   - 거래/결제 관련 도구에 대한 세밀한 통제
+#   - 감사 추적 최우선 (규제 준수)
+#
+# 관련 규제: PCI DSS, 전자금융거래법, SOX, GDPR (금융)
+#
+# 사용법:
+#   POST /api/v1/decide
+#   { "tool_name": "transfer_funds", "args": {...}, "policy_preset": "finance" }
+# ============================================================
+
+version: 1
+mode: enforce
+
+# ── 외부 전송 통제 (최엄격) ───────────────────��────────────────
+block_egress: true
+
+domain_allowlist:
+  # 사내 금융 시스템
+  - "*.internal.company.com"
+  - "core-banking.company.com"
+  - "payment-gateway.company.com"
+  # 인가된 결제 프로세서
+  - "api.stripe.com"
+  - "api.paypal.com"
+  - "api.adyen.com"
+  # 금융 데이터 제공자
+  - "api.bloomberg.com"
+  - "api.refinitiv.com"
+  # 규제 보고
+  - "reporting.regulator.gov"
+
+# ── 민감정보 보호 (최엄격) ───────────────────���─────────────────
+# 고객 금융 정보 유출은 PCI DSS/규제 위반 → block
+pii_action: block
+
+file_path_allowlist:
+  - "/srv/finance-workspace"
+  - "/tmp/finance-safe"
+
+# ── 고위험 도구 차단 ───────────────────────────────────────────
+tool_blocklist:
+  - shell_exec
+  - eval
+  - exec
+  - os_command
+  - sudo
+  - admin_api
+  - delete_database
+  - drop_table
+  - modify_permissions
+  - bulk_transfer          # 대량 송금
+  - wire_transfer          # 전신 송금
+  - update_account_limits  # 계좌 한도 변경
+  - create_card            # 카드 발급
+  - close_account          # 계좌 폐쇄
+
+capability_policy:
+  # 외부 전송
+  network_send: block
+  webhook_call: block
+  email_send: warn
+
+  # 시스템 접근
+  shell_exec: block
+  filesystem_write: warn
+  filesystem_delete: block
+
+  # 권한/인증
+  credential_access: block
+  secret_access: block
+  admin_action: block
+  permission_change: block
+
+  # 데이터 접근
+  database_write: warn
+  database_delete: block
+  bulk_export: block
+
+  # 금융 특화
+  payment_process: warn     # 결제 처리 — 로깅 필수
+  fund_transfer: warn       # 자금 이체 — 로깅 필수
+  account_modify: block     # 계좌 정보 변경 차단
+  trading_execute: warn     # 거래 실행 — 로깅 필수
+
+default_action: warn

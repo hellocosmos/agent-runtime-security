@@ -1,20 +1,61 @@
+# ============================================================
+# TrapDefense Preset: MCP Server Protection
+# ============================================================
+# 대상: MCP 서버로 사내 도구(Notion, Jira, Slack, DB, 이메일 등)를
+#       연결한 팀의 AI 에이전트.
+#
+# 방어 우선순위:
+#   1. 허가 안 된 외부 전송(egress) 차단
+#   2. 과도한 데이터 접근 + 민감정보 노출 방지
+#   3. 고위험 툴 호출 / 권한 상승 차단
+#
+# 사용법:
+#   POST /api/v1/decide
+#   { "tool_name": "send_email", "args": {...}, "policy_preset": "mcp-server" }
+# ============================================================
+
 version: 1
+
+# 운영 모드: enforce (정책 위반 시 실제 차단)
+# 처음 도입할 때는 shadow → warn → enforce 순서로 전환 권장
 mode: enforce
+
+# ── 우선순위 1: 외부 전송(egress) 통제 ──────────────────────
+# block_egress: true이면 domain_allowlist에 없는 외부 도메인으로의
+# 데이터 전송을 차단합니다.
 block_egress: true
+
+# 허용 도메인 목록 (고객 환경에 맞게 수정)
+# 예시: 사내 도구와 SaaS만 허용
 domain_allowlist:
+  # 사내 인프라
   - "*.internal.company.com"
   - "intranet.company.com"
+  # 사내 연동 SaaS (필요한 것만 추가)
   - "api.notion.com"
   - "api.atlassian.com"
   - "slack.com"
   - "hooks.slack.com"
+  # 내부 API/DB
   - "db.internal.company.com"
   - "api.internal.company.com"
+
+# ── 우선순위 2: 민감정보 노출 방지 ──────────────────────────
+# 도구 결과에 포함된 PII를 마스킹합니다.
+# block: PII가 포함된 결과를 완전 차단
+# warn: 마스킹 후 전달 + 경고 로그
+# off: 비활성화
 pii_action: warn
+
+# 파일 접근 경로 제한
+# 에이전트가 접근할 수 있는 디렉토리를 제한합니다.
 file_path_allowlist:
   - "/srv/mcp"
   - "/tmp/mcp-safe"
   - "/home/agent/workspace"
+
+# ── 우선순위 3: 고위험 툴 / 권한 상승 차단 ──────────────────
+# 어떤 상황에서도 실행되면 안 되는 도구
 tool_blocklist:
   - shell_exec
   - eval
@@ -29,18 +70,30 @@ tool_blocklist:
   - modify_permissions
   - create_user
   - reset_password
+
+# 기능(capability) 기반 정책
+# 도구 이름이 아닌 기능 유형으로 통제합니다.
 capability_policy:
-  network_send: block
-  webhook_call: block
-  email_send: warn
-  shell_exec: block
-  filesystem_write: warn
-  filesystem_delete: block
-  credential_access: block
-  secret_access: block
-  admin_action: block
-  permission_change: block
-  database_write: warn
-  database_delete: block
-  bulk_export: block
+  # 외부 전송 관련
+  network_send: block        # 외부로 데이터 전송하는 기능 차단
+  webhook_call: block        # webhook 호출 차단
+  email_send: warn           # 이메일 전송은 경고 (필요 시 block으로 변경)
+
+  # 시스템 접근 관련
+  shell_exec: block          # 쉘 명령 실행 차단
+  filesystem_write: warn     # 파일 쓰기는 경고
+  filesystem_delete: block   # 파일 삭제 차단
+
+  # 권한/인증 관련
+  credential_access: block   # 인증 정보 접근 차단
+  secret_access: block       # 시크릿/API키 접근 차단
+  admin_action: block        # 관리자 작업 차단
+  permission_change: block   # 권한 변경 차단
+
+  # 데이터 접근 관련
+  database_write: warn       # DB 쓰기는 경고
+  database_delete: block     # DB 삭제 차단
+  bulk_export: block         # 대량 데이터 내보내기 차단
+
+# 위 정책에 해당하지 않는 도구의 기본 동작
 default_action: warn

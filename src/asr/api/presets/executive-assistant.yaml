@@ -1,0 +1,83 @@
+# ============================================================
+# TrapDefense Preset: Executive Assistant Agent
+# ============================================================
+# Target: Executive assistants handling calendar, email drafting,
+#         document lookup, travel booking, and meeting prep
+#
+# Posture:
+#   - Calendar and document read freely allowed
+#   - Email drafting allowed, external sending controlled
+#   - Bulk file sharing and data export blocked
+#   - PII in contacts and correspondence must be handled
+#   - Simple and conservative by default
+# ============================================================
+
+version: 1
+mode: enforce
+
+block_egress: true
+
+domain_allowlist:
+  # Productivity
+  - "calendar.google.com"
+  - "www.googleapis.com"
+  - "graph.microsoft.com"
+  - "api.notion.com"
+  - "docs.google.com"
+  # Email
+  - "smtp.company.com"
+  - "mail.company.com"
+  # Travel
+  - "api.expedia.com"
+  - "api.concur.com"
+  # Internal
+  - "*.internal.company.com"
+  - "intranet.company.com"
+  # Collaboration
+  - "hooks.slack.com"
+  - "app.slack.com"
+
+pii_action: warn
+
+file_path_allowlist:
+  - "/srv/assistant-workspace"
+  - "/tmp/assistant-safe"
+
+tool_blocklist:
+  - shell_exec
+  - eval
+  - exec
+  - os_command
+  - sudo
+  - admin_api
+  - delete_database
+  - drop_table
+  - modify_permissions
+  - bulk_share
+  - export_all_contacts
+  - modify_access_level
+
+capability_policy:
+  # Communication — core function but controlled
+  network_send: warn
+  webhook_call: block
+  email_send: warn
+  # System
+  shell_exec: block
+  filesystem_write: warn
+  filesystem_delete: block
+  # Security
+  credential_access: block
+  secret_access: block
+  admin_action: block
+  permission_change: block
+  # Data
+  database_write: block
+  database_delete: block
+  bulk_export: block
+  # Assistant-specific
+  calendar_modify: warn
+  document_share: warn
+  travel_booking: warn
+
+default_action: warn

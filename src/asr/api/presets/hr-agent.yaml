@@ -1,0 +1,92 @@
+# ============================================================
+# TrapDefense Preset: HR / People Agent
+# ============================================================
+# 대상: HR/인사 에이전트 (직원 정보 조회, 채용 관리, 급여 확인,
+#       출퇴근 관리, 복리후생 처리 등)
+#
+# 특징:
+#   - PII 최엄격 (block) — 직원 개인정보 보호 최우선
+#   - 급여/보상 정보 접근 엄격 통제
+#   - 직원 기록 변경/삭제 차단
+#   - 대량 직원 데이터 내보내기 차단
+#
+# 관련 규제: 개인정보보호법, GDPR, 근로기준법
+#
+# 사용법:
+#   POST /api/v1/decide
+#   { "tool_name": "get_employee_info", "args": {...}, "policy_preset": "hr-agent" }
+# ============================================================
+
+version: 1
+mode: enforce
+
+# ── 외부 전송 통제 ──────────────────────────────────────���──────
+block_egress: true
+
+domain_allowlist:
+  # 사내 HR 시스템
+  - "*.internal.company.com"
+  - "hr.company.com"
+  - "payroll.company.com"
+  # HR SaaS
+  - "api.workday.com"
+  - "api.bamboohr.com"
+  - "api.greenhouse.io"
+  # SSO
+  - "sso.company.com"
+  - "login.microsoftonline.com"
+
+# ── 민감정보 보호 (최엄격) ───────────────────────��─────────────
+# 직원 개인정보(주민번호, 계좌, 급여 등) 유출은 법적 책임 → block
+pii_action: block
+
+file_path_allowlist:
+  - "/srv/hr-workspace"
+  - "/tmp/hr-safe"
+
+# ── 고위험 도구 차단 ───────────────────────────────────────────
+tool_blocklist:
+  - shell_exec
+  - eval
+  - exec
+  - os_command
+  - sudo
+  - admin_api
+  - delete_database
+  - drop_table
+  - modify_permissions
+  - delete_employee       # 직원 기록 삭제
+  - modify_salary         # 급여 변경
+  - modify_compensation   # 보상 변경
+  - export_all_employees  # 전체 직원 데이터 내보내기
+  - bulk_delete
+  - modify_access_level   # 접근 권한 변경
+
+capability_policy:
+  # 외부 전송
+  network_send: block
+  webhook_call: block
+  email_send: warn         # HR 커뮤니케이션에 필요
+
+  # 시스템 접근
+  shell_exec: block
+  filesystem_write: warn
+  filesystem_delete: block
+
+  # 권한/인증
+  credential_access: block
+  secret_access: block
+  admin_action: block
+  permission_change: block
+
+  # 데이터 접근
+  database_write: warn
+  database_delete: block
+  bulk_export: block
+
+  # HR 특화
+  employee_data_read: warn   # 직원 정보 읽기 — 감사 로깅
+  salary_access: warn        # 급여 정보 접근 — 감사 로깅
+  performance_access: warn   # 인사 평가 접근 — 감사 로깅
+
+default_action: warn
