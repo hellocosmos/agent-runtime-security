@@ -1,38 +1,23 @@
-# ============================================================
-# TrapDefense Preset: Internal Agent Protection
-# ============================================================
-# 대상: 직원용 업무 에이전트 (사내 문서 조회, 일정 관리, 업무 자동화 등)
-#
-# mcp-server보다 약간 느슨: 사내 도구 사용은 허용하되,
-# 외부 전송과 민감정보 노출만 엄격히 통제합니다.
-#
-# 사용법:
-#   POST /api/v1/decide
-#   { "tool_name": "search_docs", "args": {...}, "policy_preset": "internal-agent" }
-# ============================================================
+# Internal employee-assistant preset.
+# Allows approved work SaaS and internal systems while keeping external transfer tightly controlled.
 
 version: 1
 mode: enforce
 
-# ── 외부 전송 통제 ──────────────────────────────────────────
 block_egress: true
 
 domain_allowlist:
-  # 사내 인프라
   - "*.internal.company.com"
   - "intranet.company.com"
-  # 업무용 SaaS
   - "api.notion.com"
   - "api.atlassian.com"
   - "slack.com"
   - "hooks.slack.com"
   - "calendar.google.com"
   - "www.googleapis.com"
-  # SSO/인증
   - "sso.company.com"
   - "login.microsoftonline.com"
 
-# ── 민감정보 보호 ───────────────────────────────────────────
 pii_action: warn
 
 file_path_allowlist:
@@ -40,7 +25,6 @@ file_path_allowlist:
   - "/tmp/agent-safe"
   - "/home/agent/documents"
 
-# ── 고위험 도구 차단 ────────────────────────────────────────
 tool_blocklist:
   - shell_exec
   - eval

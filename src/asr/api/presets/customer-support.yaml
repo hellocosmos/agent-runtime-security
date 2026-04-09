@@ -1,43 +1,25 @@
-# ============================================================
-# TrapDefense Preset: Customer Support Agent
-# ============================================================
-# 대상: 고객 응대 에이전트 (이메일 답변, CRM 조회, 헬프데스크 등)
-#
-# 특징: 고객 개인정보(PII)를 가장 엄격하게 통제.
-# 모드는 warn으로 시작 → 안정 확인 후 enforce 전환 권장.
-#
-# 사용법:
-#   POST /api/v1/decide
-#   { "tool_name": "reply_email", "args": {...}, "policy_preset": "customer-support" }
-# ============================================================
+# Customer support preset.
+# Uses warn mode first so support workflows keep moving while PII handling stays strict.
 
 version: 1
-
-# warn 모드: 차단 대신 경고 로그만 남기고 실행은 허용
-# 고객 응대가 멈추면 안 되므로 warn으로 시작
 mode: warn
 
-# ── 외부 전송 통제 ──────────────────────────────────────────
 block_egress: true
 
 domain_allowlist:
-  # 고객 응대 도구
   - "mail.company.com"
   - "crm.company.com"
   - "helpdesk.company.com"
   - "support.company.com"
-  # 이메일 발송 서비스 (필요 시 추가)
   - "smtp.company.com"
 
-# ── 민감정보 보호 (가장 엄격) ────────────────────────────────
-# 고객 데이터가 오가는 환경이므로 PII를 block (차단)
+# Customer-facing workflows carry a high PII burden, so block on sensitive data.
 pii_action: block
 
 file_path_allowlist:
   - "/srv/support-exports"
   - "/tmp/support-safe"
 
-# ── 고위험 도구 차단 ────────────────────────────────────────
 tool_blocklist:
   - shell_exec
   - eval
@@ -62,7 +44,7 @@ capability_policy:
   filesystem_delete: block
   database_write: warn
   database_delete: block
-  email_send: warn           # 고객 응대에 필요하므로 warn
-  bulk_export: block         # 대량 고객 데이터 내보내기 차단
+  email_send: warn
+  bulk_export: block
 
 default_action: warn

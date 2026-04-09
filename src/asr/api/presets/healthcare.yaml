@@ -1,49 +1,26 @@
-# ============================================================
-# TrapDefense Preset: Healthcare Agent
-# ============================================================
-# 대상: 의료/헬스케어 에이전트 (환자 기록 조회, 진료 일정 관리,
-#       의료 데이터 분석, 처방 확인, EMR 연동 등)
-#
-# 특징:
-#   - PII 최엄격 (block) — 환자 정보(PHI) 유출은 HIPAA 위반
-#   - 환자 데이터 수정/삭제 완전 차단
-#   - 의료 기록 접근에 대한 감사 추적
-#   - 외부 전송 최소화
-#
-# 관련 규제: HIPAA, HITECH, 개인정보보호법 (의료), GDPR (건강 데이터)
-#
-# 사용법:
-#   POST /api/v1/decide
-#   { "tool_name": "get_patient_record", "args": {...}, "policy_preset": "healthcare" }
-# ============================================================
+# Healthcare preset.
+# Optimized for EMR, patient-data, and medication workflows with strong PHI protection.
 
 version: 1
 mode: enforce
 
-# ── 외부 전송 통제 (최엄격) ───────────────���────────────────────
 block_egress: true
 
 domain_allowlist:
-  # 사내 의료 시스템
   - "*.internal.hospital.com"
   - "emr.hospital.com"
   - "pacs.hospital.com"
-  # 인가된 의료 데이터 교환
   - "api.hl7.org"
   - "fhir.hospital.com"
-  # 약물 데이터베이스
   - "api.drugs.com"
   - "rxnav.nlm.nih.gov"
 
-# ── 민감정보 보호 (최엄격) ─────────────────────────────────────
-# PHI (Protected Health Information) 유출은 HIPAA 위반 → block
 pii_action: block
 
 file_path_allowlist:
   - "/srv/medical-workspace"
   - "/tmp/medical-safe"
 
-# ── 고위험 도구 차단 ─────────���───────────────────────��─────────
 tool_blocklist:
   - shell_exec
   - eval
@@ -54,38 +31,33 @@ tool_blocklist:
   - delete_database
   - drop_table
   - modify_permissions
-  - delete_patient_record  # 환자 기록 삭제
-  - modify_prescription    # 처방 변경
-  - export_patient_data    # 환자 데이터 내보내기
+  - delete_patient_record
+  - modify_prescription
+  - export_patient_data
   - bulk_delete
-  - merge_patient_records  # 환자 기록 병합 (의료 사고 위험)
+  - merge_patient_records
 
 capability_policy:
-  # 외부 전송
   network_send: block
   webhook_call: block
   email_send: warn
 
-  # 시스템 접근
   shell_exec: block
   filesystem_write: warn
   filesystem_delete: block
 
-  # 권한/인증
   credential_access: block
   secret_access: block
   admin_action: block
   permission_change: block
 
-  # 데이터 접근
-  database_write: warn      # 의료 기록 쓰기는 경고 + 로깅
+  database_write: warn
   database_delete: block
   bulk_export: block
 
-  # 의료 특화
-  patient_data_read: warn    # 환자 데이터 읽기 — 감사 로깅 필수
-  patient_data_write: warn   # 환자 데이터 쓰기 — 감사 로깅 필수
-  prescription_read: warn    # 처방 조회 — 감사 로깅
-  lab_result_access: warn    # 검사 결과 접근 — 감사 로깅
+  patient_data_read: warn
+  patient_data_write: warn
+  prescription_read: warn
+  lab_result_access: warn
 
 default_action: warn

@@ -1,42 +1,21 @@
-# ============================================================
-# TrapDefense Preset: Data Pipeline Agent
-# ============================================================
-# 대상: 데이터 처리/분석 에이전트 (ETL 파이프라인, 데이터 웨어하우스,
-#       분석 쿼리 실행, 리포트 생성, ML 데이터 준비 등)
-#
-# 특징:
-#   - 대량 데이터 읽기는 허용하되, 외부 전송은 엄격히 제한
-#   - 데이터 삭제/변경은 warn (파이프라인 특성)
-#   - PII 마스킹 필수 (데이터 처리 과정에서 PII 노출 방지)
-#   - bulk_export는 허용 범위 내에서만
-#
-# 사용법:
-#   POST /api/v1/decide
-#   { "tool_name": "run_query", "args": {...}, "policy_preset": "data-pipeline" }
-# ============================================================
+# Data pipeline preset for ETL, warehousing, analytics, and ML-prep workflows.
+# Large-scale reads are expected, but uncontrolled external transfer is not.
 
 version: 1
 mode: enforce
 
-# ── 외부 전송 통제 ──────────────────────────────��──────────────
 block_egress: true
 
 domain_allowlist:
-  # 사내 데이터 인프라
   - "*.internal.company.com"
   - "warehouse.company.com"
   - "datalake.company.com"
-  # 클라우드 데이터 서비스
   - "*.bigquery.googleapis.com"
   - "*.redshift.amazonaws.com"
   - "*.snowflakecomputing.com"
-  # 데이터 카탈로그
   - "catalog.company.com"
-  # 알림
   - "hooks.slack.com"
 
-# ── 민감정보 보호 ────────��───────────────────────────��─────────
-# 데이터 파이프라인은 대량의 데이터를 처리하므로 PII 마스킹 필수
 pii_action: warn
 
 file_path_allowlist:
@@ -45,7 +24,6 @@ file_path_allowlist:
   - "/data/warehouse"
   - "/data/lake"
 
-# ── 고위험 도구 차단 ──────────────────────��────────────────────
 tool_blocklist:
   - shell_exec
   - eval
@@ -55,34 +33,29 @@ tool_blocklist:
   - admin_api
   - modify_permissions
   - drop_database
-  - truncate_all_tables  # 전체 테이블 초기화
-  - delete_dataset       # 데이터셋 삭제
+  - truncate_all_tables
+  - delete_dataset
 
 capability_policy:
-  # 외부 전송
   network_send: block
-  webhook_call: warn      # 파이프라인 알림에 필요
+  webhook_call: warn
   email_send: warn
 
-  # 시스템 접근
   shell_exec: block
-  filesystem_write: warn  # 데이터 파일 쓰기 허용
-  filesystem_delete: warn # 임시 파일 정리 허용
+  filesystem_write: warn
+  filesystem_delete: warn
 
-  # 권한/인증
   credential_access: block
   secret_access: block
   admin_action: block
   permission_change: block
 
-  # 데이터 접근 — 파이프라인 특성상 읽기 중심
   database_write: warn
   database_delete: block
-  bulk_export: warn        # 데이터 내보내기는 warn (파이프라인 필수 작업)
+  bulk_export: warn
 
-  # 데이터 특화
-  query_execute: warn      # 쿼리 실행 — 로깅
-  schema_modify: block     # 스키마 변경 — 차단
-  data_transform: warn     # 데이터 변환 — 로깅
+  query_execute: warn
+  schema_modify: block
+  data_transform: warn
 
 default_action: warn

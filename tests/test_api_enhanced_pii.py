@@ -1,4 +1,4 @@
-"""확장 PII 프로필 테스트."""
+"""Tests for extended PII profiles."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ def _install():
     install_enhanced_pii()
 
 
-# ── Luhn 알고리즘 ────────────────────────────────────────────
+# ── Luhn algorithm ───────────────────────────────────────────
 
 
 class TestLuhn:
@@ -36,30 +36,30 @@ class TestLuhn:
         assert _luhn_check("123456") is False
 
 
-# ── 일본 (jp) ────────────────────────────────────────────────
+# ── Japan (jp) ───────────────────────────────────────────────
 
 
 class TestJapanPII:
     def test_my_number_with_context(self):
-        """문맥 키워드(マイナンバー)가 있으면 탐지."""
+        """Detect when a context keyword such as マイナンバー is present."""
         hits = _detect_extended("マイナンバー: 1234 5678 9012", frozenset(["my_number"]))
         types = [h["type"] for h in hits]
         assert "my_number" in types
 
     def test_my_number_with_english_context(self):
-        """영어 문맥 키워드(my number)도 동작."""
+        """English context keywords such as my number also work."""
         hits = _detect_extended("My Number is 123456789012", frozenset(["my_number"]))
         types = [h["type"] for h in hits]
         assert "my_number" in types
 
     def test_my_number_no_context_no_match(self):
-        """문맥 키워드 없는 12자리 숫자는 탐지하지 않음."""
+        """Do not detect a bare 12-digit number without context keywords."""
         hits = _detect_extended("order_id=123456789012", frozenset(["my_number"]))
         types = [h["type"] for h in hits]
         assert "my_number" not in types
 
     def test_my_number_distant_context_no_match(self):
-        """문맥 키워드가 60자 넘게 떨어져 있으면 탐지하지 않음."""
+        """Do not detect when the context keyword is more than 60 chars away."""
         text = "My Number policy note " + "x" * 200 + " order_id=123456789012"
         hits = _detect_extended(text, frozenset(["my_number"]))
         types = [h["type"] for h in hits]
@@ -76,7 +76,7 @@ class TestJapanPII:
         assert "jp_phone" in types
 
 
-# ── 중국 (cn) ────────────────────────────────────────────────
+# ── China (cn) ───────────────────────────────────────────────
 
 
 class TestChinaPII:
@@ -96,7 +96,7 @@ class TestChinaPII:
         assert "cn_phone" in types
 
 
-# ── 인도 (in) ────────────────────────────────────────────────
+# ── India (in) ───────────────────────────────────────────────
 
 
 class TestIndiaPII:
@@ -111,13 +111,13 @@ class TestIndiaPII:
         assert "pan" in types
 
     def test_invalid_pan_no_match(self):
-        """4번째 문자가 유효 코드(ABCFGHLJPTK)가 아니면 탐지 안 됨."""
+        """Do not detect when the 4th character is not a valid PAN code."""
         hits = _detect_extended("PAN: XYZXB1234C", frozenset(["pan"]))
         types = [h["type"] for h in hits]
         assert "pan" not in types
 
 
-# ── 브라질 (br) ──────────────────────────────────────────────
+# ── Brazil (br) ──────────────────────────────────────────────
 
 
 class TestBrazilPII:
@@ -132,44 +132,44 @@ class TestBrazilPII:
         assert "cnpj" in types
 
 
-# ── 캐나다 (ca) ──────────────────────────────────────────────
+# ── Canada (ca) ──────────────────────────────────────────────
 
 
 class TestCanadaPII:
     def test_sin_valid_luhn(self):
-        """Luhn 통과하는 SIN만 탐지."""
+        """Only detect SIN values that pass Luhn validation."""
         hits = _detect_extended("SIN: 046-454-286", frozenset(["sin"]))
         types = [h["type"] for h in hits]
         assert "sin" in types
 
     def test_sin_invalid_luhn_no_match(self):
-        """Luhn 실패하는 숫자는 탐지하지 않음 (오탐 방지)."""
+        """Do not detect numbers that fail Luhn to avoid false positives."""
         hits = _detect_extended("invoice 123-456-789 due", frozenset(["sin"]))
         types = [h["type"] for h in hits]
         assert "sin" not in types
 
 
-# ── 호주 (au) ────────────────────────────────────────────────
+# ── Australia (au) ───────────────────────────────────────────
 
 
 class TestAustraliaPII:
     def test_tfn_valid_checksum(self):
-        """가중 체크섬 통과하는 TFN만 탐지."""
-        # 가중합 = 8*1+6*4+5*3+5*7+7*5+8*8+9*6+6*9+3*10 = 336 → 336%11=0 ✓
+        """Only detect TFNs that pass the weighted checksum."""
+        # Weighted sum = 8*1+6*4+5*3+5*7+7*5+8*8+9*6+6*9+3*10 = 336 -> 336%11=0
         hits = _detect_extended("TFN: 865 578 963", frozenset(["tfn"]))
         assert _tfn_check("865 578 963") is True
         types = [h["type"] for h in hits]
         assert "tfn" in types
 
     def test_tfn_invalid_checksum_no_match(self):
-        """체크섬 실패하는 숫자는 탐지하지 않음 (오탐 방지)."""
+        """Do not detect numbers that fail the checksum to avoid false positives."""
         hits = _detect_extended("ref 123 456 789 ok", frozenset(["tfn"]))
         assert _tfn_check("123 456 789") is False
         types = [h["type"] for h in hits]
         assert "tfn" not in types
 
 
-# ── 영국 (uk) ────────────────────────────────────────────────
+# ── United Kingdom (uk) ──────────────────────────────────────
 
 
 class TestUKPII:
@@ -184,13 +184,13 @@ class TestUKPII:
         assert "nino" in types
 
     def test_invalid_prefix_no_match(self):
-        """BG, GB, NK 등은 NINO에 사용 불가."""
+        """Prefixes such as BG, GB, and NK are invalid for NINO."""
         hits = _detect_extended("NI: BG123456C", frozenset(["nino"]))
         types = [h["type"] for h in hits]
         assert "nino" not in types
 
 
-# ── 싱가포르 / EU VAT / 필리핀 / 말레이시아 ──────────────────
+# ── Singapore / EU VAT / Philippines / Malaysia ──────────────
 
 
 class TestSingaporePII:
@@ -251,7 +251,7 @@ class TestMalaysiaPII:
         assert "my_nric" not in types
 
 
-# ── 결제 (payment) ──────────────────────────────────────────
+# ── Payment (payment) ────────────────────────────────────────
 
 
 class TestPaymentPII:
@@ -266,13 +266,13 @@ class TestPaymentPII:
         assert "credit_card" in types
 
     def test_invalid_luhn_no_match(self):
-        """Luhn 검증 실패하면 탐지 안 됨."""
+        """Do not detect card numbers that fail Luhn validation."""
         hits = _detect_extended("Card: 4111-1111-1111-1112", frozenset(["credit_card"]))
         types = [h["type"] for h in hits]
         assert "credit_card" not in types
 
 
-# ── 통합 (SDK PII 패치 동작 확인) ──────────────────────────
+# ── Integration (verify SDK PII patching) ────────────────────
 
 
 class TestIntegrationWithSDK:
@@ -302,14 +302,14 @@ class TestIntegrationWithSDK:
         assert asr.pii.has_pii("NINO: AB123456C", profiles=["uk"]) is True
 
     def test_sdk_original_profiles_still_work(self):
-        """SDK 기본 프로필도 여전히 동작."""
+        """Base SDK profiles should still work."""
         import asr.pii
         assert asr.pii.has_pii("email: test@example.com", profiles=["global-core"]) is True
         result = asr.pii.redact_pii("SSN: 123-45-6789", profiles=["us"])
         assert "[SSN]" in result
 
 
-# ── 프로필 메타데이터 ────────────────────────────────────────
+# ── Profile metadata ──────────────────────────────────────────
 
 
 class TestProfileMetadata:

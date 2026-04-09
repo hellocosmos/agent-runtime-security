@@ -71,7 +71,7 @@ class TestToDict:
         assert d["details"]["trace_id"] == "abc-123"
 
     def test_context_cannot_overwrite_core(self):
-        """details에 tool_name 키가 있어도 core를 덮지 않음."""
+        """A tool_name key in details does not override the core value."""
         err = BlockedToolError(
             _make_decision(),
             context={"tool_name": "hacked"},

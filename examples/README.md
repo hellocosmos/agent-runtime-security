@@ -1,6 +1,6 @@
 # Agent Runtime Security MCP Example Server
 
-[English](./README.md) | [한국어](./README.ko.md)
+[English](./README.md) | [Korean](./README.ko.md)
 
 This is a demo MCP server protected by Guard policies. It uses four tools to show the core behavior of the SDK.
 

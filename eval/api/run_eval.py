@@ -1,4 +1,4 @@
-"""Eval set 실행기 — scan/decide/redact eval을 실제 API 로직으로 돌리고 결과를 요약한다."""
+"""Run the scan, decide, and redact eval suites against the live API logic."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ EVAL_DIR = Path(__file__).parent
 
 
 def run_scan_eval() -> dict:
-    """scan eval 실행."""
+    """Run the scan eval suite."""
     cases = json.loads((EVAL_DIR / "scan_eval.json").read_text())
     scanner = EnhancedScanner()
     passed = 0
@@ -59,7 +59,7 @@ def run_scan_eval() -> dict:
 
 
 def run_decide_eval() -> dict:
-    """decide eval 실행."""
+    """Run the decide eval suite."""
     cases = json.loads((EVAL_DIR / "decide_eval.json").read_text())
     passed = 0
     failed = []
@@ -119,7 +119,7 @@ def run_decide_eval() -> dict:
 
 
 def run_redact_eval() -> dict:
-    """redact eval 실행."""
+    """Run the redact eval suite."""
     cases = json.loads((EVAL_DIR / "redact_eval.json").read_text())
     passed = 0
     failed = []
@@ -155,7 +155,7 @@ def run_redact_eval() -> dict:
                     ok = False
                     reasons.append(f"missing label: {label} in {redacted_str[:100]}")
 
-        # 원본 민감 값이 결과에서 제거되었는지 확인
+        # Confirm the raw sensitive value no longer appears in the output.
         if "absent" in exp:
             for raw_value in exp["absent"]:
                 if raw_value in redacted_str:

@@ -8,11 +8,11 @@ from asr.pii import redact_pii
 
 
 def redact_args(args: dict, profiles: list[str] | None = None) -> dict:
-    """args 딕셔너리 내 문자열 값에서 PII를 마스킹한다.
+    """Redact PII from string values inside an args dictionary.
 
     Args:
-        args: 검사할 인수 딕셔너리
-        profiles: 활성화할 PII 프로필 목록. None이면 모든 패턴 적용.
+        args: Argument dictionary to inspect.
+        profiles: Active PII profiles. ``None`` applies all patterns.
     """
     redacted = {}
     for key, value in args.items():
@@ -26,7 +26,7 @@ def redact_args(args: dict, profiles: list[str] | None = None) -> dict:
 
 
 def extract_text(value: Any) -> str:
-    """구조화된 값을 재귀적으로 평탄화하여 PII 검사용 텍스트로 반환한다."""
+    """Recursively flatten structured values into text for PII inspection."""
     if isinstance(value, str):
         return value
     if isinstance(value, dict):
@@ -37,11 +37,11 @@ def extract_text(value: Any) -> str:
 
 
 def redact_result(value: Any, profiles: list[str] | None = None) -> Any:
-    """원래 결과 타입을 보존하면서 PII를 마스킹한다.
+    """Redact PII while preserving the original result type.
 
     Args:
-        value: 마스킹할 값 (str, dict, list, tuple 또는 기타)
-        profiles: 활성화할 PII 프로필 목록. None이면 모든 패턴 적용.
+        value: Value to redact, such as ``str``, ``dict``, ``list``, or ``tuple``.
+        profiles: Active PII profiles. ``None`` applies all patterns.
     """
     if isinstance(value, str):
         return redact_pii(value, profiles=profiles)

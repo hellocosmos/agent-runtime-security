@@ -5,12 +5,12 @@ from asr.guard_config import validate_guard_config
 
 class TestVersionHandling:
     def test_missing_version_defaults_to_v1(self):
-        """version 없으면 1로 간주, tools: 없으면 통과."""
+        """Treat a missing version as v1; allow it when tools: is absent."""
         config = {"mode": "shadow"}
         validate_guard_config(config)  # should not raise
 
     def test_missing_version_with_tools_rejected(self):
-        """version 없으면 v1 → tools: 사용 불가."""
+        """Treat a missing version as v1, where tools: is not allowed."""
         config = {"mode": "shadow", "tools": {"send_email": {}}}
         with pytest.raises(ValueError, match="version: 2"):
             validate_guard_config(config)

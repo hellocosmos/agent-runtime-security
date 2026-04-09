@@ -123,7 +123,7 @@ class TestGuardFromConfig:
 
 class TestGuardFromConfigValidation:
     def test_missing_version_defaults_to_v1(self):
-        """version 없으면 v1로 간주, 유효한 설정이면 통과."""
+        """Treat a missing version as v1 and allow valid configs."""
         guard = Guard.from_config({"mode": "enforce"})
         assert guard._mode == "enforce"
 

@@ -1,7 +1,8 @@
-"""API 전용 확장 스캐너 — SDK 기본 11종 + API 프리미엄 21종 = 총 32종 패턴.
+"""API-only scanner extension with 32 total detection patterns.
 
-SDK Scanner를 상속하여 API에서만 제공하는 고급 탐지 패턴을 추가한다.
-제품 포지셔닝: agent runtime defense (unsafe tool use, data exfiltration, hidden payloads).
+This scanner extends the SDK baseline with advanced patterns exposed through
+the HTTP API layer: unsafe tool use, data exfiltration, and hidden payload
+detection.
 """
 
 from __future__ import annotations
@@ -14,31 +15,31 @@ from asr.types import Finding, ScanResult
 
 
 # ──────────────────────────────────────────────────────────────
-# 12. SQL Injection — 인젝션 지표가 있는 경우만 탐지
-#     정상 DML(DELETE FROM, INSERT INTO 단독)은 통과시킴
+# 12. SQL Injection: trigger only when actual injection indicators appear
+#     Benign standalone DML such as DELETE FROM or INSERT INTO is allowed
 # ──────────────────────────────────────────────────────────────
 _SQL_INJECTION_PATTERNS: list[re.Pattern[str]] = [
-    # 파괴적 DDL (항상 위험)
+    # Destructive DDL (always risky)
     re.compile(
         r"\b(?:DROP\s+TABLE|DROP\s+DATABASE|TRUNCATE\s+TABLE)\b",
         re.IGNORECASE,
     ),
-    # 인젝션 기법: UNION SELECT
+    # Injection technique: UNION SELECT
     re.compile(
         r"\b(?:UNION\s+(?:ALL\s+)?SELECT)\b",
         re.IGNORECASE,
     ),
-    # 인젝션 기법: tautology / string escape
+    # Injection technique: tautology / string escape
     re.compile(
         r"(?:'\s*(?:OR|AND)\s+['\d].*?[=<>])|(?:'\s*OR\s+1\s*=\s*1)|(?:'\s*=\s*')",
         re.IGNORECASE,
     ),
-    # 인젝션 기법: stacked queries (DML + 주석/세미콜론 조합)
+    # Injection technique: stacked queries with comments or semicolons
     re.compile(
         r";\s*(?:DROP|DELETE|INSERT|UPDATE|EXEC)\b",
         re.IGNORECASE,
     ),
-    # 시간 기반 인젝션
+    # Time-based injection
     re.compile(
         r"(?:WAITFOR\s+DELAY)|(?:BENCHMARK\s*\()|(?:SLEEP\s*\()",
         re.IGNORECASE,
@@ -46,8 +47,8 @@ _SQL_INJECTION_PATTERNS: list[re.Pattern[str]] = [
 ]
 
 # ──────────────────────────────────────────────────────────────
-# 13. NoSQL Injection — JSON 객체 문맥에서만 탐지
-#     문서에서 $gt를 설명하는 것은 통과시킴
+# 13. NoSQL Injection: only in JSON/object contexts
+#     Allow documentation that merely explains operators like $gt
 # ──────────────────────────────────────────────────────────────
 _NOSQL_INJECTION_RE = re.compile(
     r'[{:]\s*["\']?\$(?:gt|gte|lt|lte|ne|eq|in|nin|or|and|not|nor|regex|where|exists|expr)\b',
@@ -58,18 +59,18 @@ _NOSQL_INJECTION_RE = re.compile(
 # 14. Command Injection
 # ──────────────────────────────────────────────────────────────
 _COMMAND_INJECTION_PATTERNS: list[re.Pattern[str]] = [
-    # 셸 명령 체이닝: ; cmd, | cmd, && cmd
+    # Shell command chaining: ; cmd, | cmd, && cmd
     re.compile(
         r"(?:^|[;&|`])\s*(?:rm\s+-rf|wget\s+|curl\s+|nc\s+|ncat\s+|bash\s+-[ic]|sh\s+-[ic]|python\s+-c|perl\s+-e|ruby\s+-e)",
         re.IGNORECASE | re.MULTILINE,
     ),
-    # 백틱/서브셸 실행
+    # Backtick or subshell execution
     re.compile(
         r"`[^`\n]{0,40}\b(?:cat|curl|wget|bash|sh|python|perl|ruby|nc|ncat|rm|chmod|chown|ssh|scp)\b[^`\n]{0,120}`"
         r"|\$\([^)]{3,}\)",
         re.IGNORECASE,
     ),
-    # 리다이렉션을 통한 파일 쓰기 공격
+    # File write via shell redirection
     re.compile(r">\s*/(?:etc|tmp|var|dev)/", re.IGNORECASE),
 ]
 
@@ -77,9 +78,9 @@ _COMMAND_INJECTION_PATTERNS: list[re.Pattern[str]] = [
 # 15. Path Traversal
 # ──────────────────────────────────────────────────────────────
 _PATH_TRAVERSAL_PATTERNS: list[re.Pattern[str]] = [
-    re.compile(r"(?:\.\./){2,}"),                    # ../../ (2+ 레벨)
-    re.compile(r"(?:%2e%2e[/\\%]){2,}", re.IGNORECASE),  # URL 인코딩
-    re.compile(r"(?:\.\.\\){2,}"),                   # 윈도우 경로
+    re.compile(r"(?:\.\./){2,}"),                    # ../../ (2+ levels)
+    re.compile(r"(?:%2e%2e[/\\%]){2,}", re.IGNORECASE),  # URL-encoded traversal
+    re.compile(r"(?:\.\.\\){2,}"),                   # Windows-style paths
     re.compile(r"\.\./.*(?:etc/passwd|etc/shadow|\.ssh|\.env)", re.IGNORECASE),
 ]
 
@@ -87,17 +88,17 @@ _PATH_TRAVERSAL_PATTERNS: list[re.Pattern[str]] = [
 # 16. SSRF (Server-Side Request Forgery)
 # ──────────────────────────────────────────────────────────────
 _SSRF_PATTERNS: list[re.Pattern[str]] = [
-    # AWS/GCP/Azure 메타데이터 엔드포인트
+    # AWS/GCP/Azure metadata endpoints
     re.compile(
         r"https?://(?:169\.254\.169\.254|metadata\.google\.internal|169\.254\.170\.2)",
         re.IGNORECASE,
     ),
-    # 클라우드 메타데이터 경로
+    # Cloud metadata paths
     re.compile(
         r"/(?:latest/meta-data|computeMetadata|metadata/instance)",
         re.IGNORECASE,
     ),
-    # 내부 서비스 포트 스캐닝 시도
+    # Internal service port scanning attempts
     re.compile(
         r"https?://(?:localhost|127\.0\.0\.1|0\.0\.0\.0|::1):\d+",
         re.IGNORECASE,
@@ -112,7 +113,7 @@ _PRIVILEGE_ESCALATION_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"(?:bypass|disable|turn\s+off|skip)\s+(?:auth(?:entication|orization)?|access\s+control|permission\s+check|security|rate\s+limit)", re.IGNORECASE),
     re.compile(r"(?:run|execute)\s+(?:as|with)\s+(?:admin|root|sudo|superuser|elevated)", re.IGNORECASE),
     re.compile(r"(?:escalate|elevate)\s+(?:your|my|this)?\s*(?:privileges?|permissions?|access)", re.IGNORECASE),
-    # 한국어
+    # Korean coverage
     re.compile(r"(?:관리자|루트|최고)\s*권한.{0,10}(?:부여|설정|변경|획득)", re.IGNORECASE),
     re.compile(r"(?:인증|보안|권한\s*검사).{0,10}(?:우회|비활성화|끄|무시)", re.IGNORECASE),
 ]
@@ -124,7 +125,7 @@ _CREDENTIAL_HARVEST_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"(?:list|dump|show|print|get|read|extract|export)\s+(?:all\s+)?(?:passwords?|credentials?|secrets?|api[_\s]?keys?|tokens?|private[_\s]?keys?)", re.IGNORECASE),
     re.compile(r"(?:access|read|cat|type|open)\s+.*(?:\.env|\.ssh/|credentials|secrets\.(?:json|yaml|yml|toml|ini))", re.IGNORECASE),
     re.compile(r"(?:enumerate|scan\s+for|search\s+for)\s+(?:credentials?|secrets?|tokens?|keys?)", re.IGNORECASE),
-    # 한국어
+    # Korean coverage
     re.compile(r"(?:비밀번호|인증\s*정보|시크릿|API\s*키|토큰).{0,10}(?:목록|전부|모두|출력|추출|덤프)", re.IGNORECASE),
 ]
 
@@ -132,7 +133,7 @@ _CREDENTIAL_HARVEST_PATTERNS: list[re.Pattern[str]] = [
 # 19. Webhook Exfiltration
 # ──────────────────────────────────────────────────────────────
 _WEBHOOK_EXFIL_PATTERNS: list[re.Pattern[str]] = [
-    # 알려진 webhook 수집 서비스
+    # Known webhook collection services
     re.compile(
         r"https?://(?:"
         r"(?:[\w-]+\.)?webhook\.site"
@@ -148,7 +149,7 @@ _WEBHOOK_EXFIL_PATTERNS: list[re.Pattern[str]] = [
         r")",
         re.IGNORECASE,
     ),
-    # 데이터를 쿼리 스트링으로 전송하는 패턴
+    # Data being shipped via query-string parameters
     re.compile(
         r"https?://[^\s]+\?(?:.*(?:data|payload|secret|token|key|password|exfil)=)",
         re.IGNORECASE,
@@ -163,8 +164,8 @@ _JWT_RE = re.compile(
 )
 
 # ──────────────────────────────────────────────────────────────
-# 21. Internal IP Reference — URL 문맥에서만 탐지
-#     "10.0.0.0/8" 같은 설명은 통과시킴
+# 21. Internal IP Reference: only in URL contexts
+#     Explanatory text such as "10.0.0.0/8" is allowed
 # ──────────────────────────────────────────────────────────────
 _INTERNAL_IP_URL_RE = re.compile(
     r"https?://(?:"
@@ -179,7 +180,7 @@ _INTERNAL_IP_URL_RE = re.compile(
 # 22. Log Injection / Log Forging
 # ──────────────────────────────────────────────────────────────
 _LOG_INJECTION_PATTERNS: list[re.Pattern[str]] = [
-    # 가짜 로그 엔트리 삽입
+    # Injected fake log entries
     re.compile(
         r"(?:\\n|\\r|%0[aAdD]).*?"
         r"(?:\d{4}-\d{2}-\d{2}|\[(?:INFO|WARN|ERROR|DEBUG)\]|"
@@ -249,19 +250,19 @@ _PRESIGNED_URL_RE = re.compile(
 )
 
 # ──────────────────────────────────────────────────────────────
-# 28. Mixed Encoding Payload (여러 인코딩 기법 혼합)
+# 28. Mixed Encoding Payload (multiple encoding schemes combined)
 # ──────────────────────────────────────────────────────────────
 _MIXED_ENCODING_PATTERNS: list[re.Pattern[str]] = [
-    # base64 + hex 혼합
+    # Base64 + hex
     re.compile(r"(?:\\x[0-9a-fA-F]{2}){2,}.*[A-Za-z0-9+/]{20,}={0,2}"),
-    # unicode escape + HTML entity 혼합
+    # Unicode escapes + HTML entities
     re.compile(r"(?:\\u[0-9a-fA-F]{4}){2,}.*(?:&#x?[0-9a-fA-F]+;){2,}"),
     # percent encoding chains
     re.compile(r"(?:%[0-9a-fA-F]{2}){8,}"),
 ]
 
 # ──────────────────────────────────────────────────────────────
-# 29. Credential Bundle Dump (인증 정보 묶음 노출)
+# 29. Credential Bundle Dump (credential bundles exposed)
 # ──────────────────────────────────────────────────────────────
 _CREDENTIAL_BUNDLE_RE = re.compile(
     r"(?:(?:username|user|login)\s*[=:]\s*\S+\s*(?:\n|\r|,|;)\s*(?:password|passwd|pass)\s*[=:]\s*\S+)"
@@ -285,7 +286,7 @@ _CONSENT_BYPASS_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"(?:pretend|act\s+as\s+if|assume)\s+(?:the\s+user|I|they)\s+(?:already\s+)?(?:consented|agreed|approved|authorized|confirmed)", re.IGNORECASE),
     re.compile(r"(?:skip|bypass|ignore)\s+(?:the\s+)?(?:consent|confirmation|approval|verification)\s+(?:step|check|prompt|dialog)", re.IGNORECASE),
     re.compile(r"(?:the\s+user\s+said\s+yes|user\s+already\s+agreed|no\s+need\s+to\s+confirm|don'?t\s+ask\s+for\s+(?:consent|approval|confirmation))", re.IGNORECASE),
-    # 한국어
+    # Korean coverage
     re.compile(r"(?:동의|승인|확인)\s*(?:절차|단계|과정).{0,10}(?:건너뛰|생략|무시|스킵)", re.IGNORECASE),
 ]
 
@@ -295,7 +296,7 @@ _CONSENT_BYPASS_PATTERNS: list[re.Pattern[str]] = [
 _BULK_ARCHIVE_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"(?:zip|tar|compress|archive|bundle)\s+(?:all|every|entire|the\s+whole)\s+(?:data|files?|records?|database|directory|folder|repo)", re.IGNORECASE),
     re.compile(r"(?:export|dump|upload|share)\s+(?:everything|all\s+data|complete\s+backup|full\s+archive)", re.IGNORECASE),
-    # 한국어
+    # Korean coverage
     re.compile(r"(?:전체|모든|완전)\s*(?:데이터|파일|레코드|DB).{0,10}(?:압축|아카이브|백업|내보내기|다운로드)", re.IGNORECASE),
 ]
 
@@ -326,14 +327,14 @@ _BENIGN_SQL_CONTEXT_RE = re.compile(
 
 
 def _context_window(content: str, start: int, end: int, *, window: int = 120) -> str:
-    """매치 주변 문맥을 잘라 본다."""
+    """Slice out a context window around a match."""
     window_start = max(0, start - window)
     window_end = min(len(content), end + window)
     return content[window_start:window_end]
 
 
 def _has_sensitive_exfil_context(content: str, start: int, end: int) -> bool:
-    """URL/서비스 참조가 실제 민감 정보 유출 맥락인지 확인."""
+    """Return whether a service reference appears in true exfil context."""
     window = _context_window(content, start, end)
     matched_text = content[start:end]
     window_without_match = window.replace(matched_text, " ", 1)
@@ -361,7 +362,7 @@ def _has_presigned_exfil_context(content: str, start: int, end: int) -> bool:
 
 
 def _has_risky_bulk_archive_context(content: str, start: int, end: int) -> bool:
-    """대량 아카이브 문구가 실제 민감 자산 반출 맥락인지 확인."""
+    """Return whether bulk archive language targets sensitive asset export."""
     window = _context_window(content, start, end)
     if not _SENSITIVE_ASSET_RE.search(window):
         return False
@@ -371,15 +372,15 @@ def _has_risky_bulk_archive_context(content: str, start: int, end: int) -> bool:
 
 
 class EnhancedScanner(Scanner):
-    """SDK 기본 11종 + API 프리미엄 21종 = 총 32종 패턴 스캐너.
+    """Scanner with 32 total patterns: 11 SDK baseline + 21 API extensions.
 
-    제품 포지셔닝에 맞는 패턴:
+    Pattern groups aligned to the product surface:
     - Agent runtime defense: command injection, path traversal, SSRF
     - Data exfiltration: webhook/discord/telegram/pastebin/cloud/presigned URL exfil
     - Hidden payloads: privilege escalation, log injection, mixed encoding
     - Credential protection: credential harvest/bundle, env/ssh/kubeconfig refs
     - Social engineering: consent bypass phrases, bulk archive export
-    - Injection defense: SQL/NoSQL (인젝션 지표 필수)
+    - Injection defense: SQL/NoSQL with actual injection indicators required
     """
 
     def scan(
@@ -394,7 +395,7 @@ class EnhancedScanner(Scanner):
 
         findings: list[Finding] = []
 
-        # ── SDK 기본 패턴 (11종) ──
+        # ── SDK baseline patterns (11) ──
         findings.extend(self._check_css_hidden_text(content))
         findings.extend(self._check_html_comment_injection(content))
         findings.extend(self._check_metadata_injection(content))
@@ -407,7 +408,7 @@ class EnhancedScanner(Scanner):
         findings.extend(self._check_data_exfil_phrase(content))
         findings.extend(self._check_encoded_bypass(content))
 
-        # ── API 프리미엄 패턴 (21종) ──
+        # ── API extension patterns (21) ──
         findings.extend(self._check_sql_injection(content))
         findings.extend(self._check_nosql_injection(content))
         findings.extend(self._check_command_injection(content))
@@ -454,11 +455,11 @@ class EnhancedScanner(Scanner):
             source_ref=source_ref,
         )
 
-    # ── 프리미엄 패턴 체커 ──────────────────────────────────────
+    # ── Extension pattern checkers ─────────────────────────────
 
     @staticmethod
     def _check_sql_injection(content: str) -> list[Finding]:
-        """SQL 인젝션 패턴 탐지 (인젝션 지표 필수, 정상 DML 통과)."""
+        """Detect SQL injection patterns while allowing benign DML."""
         if _BENIGN_SQL_CONTEXT_RE.search(content):
             return []
         for pattern in _SQL_INJECTION_PATTERNS:
@@ -473,7 +474,7 @@ class EnhancedScanner(Scanner):
 
     @staticmethod
     def _check_nosql_injection(content: str) -> list[Finding]:
-        """NoSQL 인젝션 패턴 탐지 (JSON 객체 문맥 필수)."""
+        """Detect NoSQL injection operators in JSON/object contexts."""
         if _NOSQL_INJECTION_RE.search(content):
             return [Finding(
                 pattern_id="nosql_injection",
@@ -485,7 +486,7 @@ class EnhancedScanner(Scanner):
 
     @staticmethod
     def _check_command_injection(content: str) -> list[Finding]:
-        """셸 커맨드 인젝션 패턴 탐지."""
+        """Detect shell command injection patterns."""
         for pattern in _COMMAND_INJECTION_PATTERNS:
             if pattern.search(content):
                 return [Finding(
@@ -498,7 +499,7 @@ class EnhancedScanner(Scanner):
 
     @staticmethod
     def _check_path_traversal(content: str) -> list[Finding]:
-        """디렉토리 트래버설 패턴 탐지."""
+        """Detect path traversal patterns."""
         for pattern in _PATH_TRAVERSAL_PATTERNS:
             if pattern.search(content):
                 return [Finding(
@@ -511,7 +512,7 @@ class EnhancedScanner(Scanner):
 
     @staticmethod
     def _check_ssrf_attempt(content: str) -> list[Finding]:
-        """SSRF 패턴 탐지 (클라우드 메타데이터, 내부 서비스)."""
+        """Detect SSRF patterns targeting metadata or internal services."""
         for pattern in _SSRF_PATTERNS:
             if pattern.search(content):
                 return [Finding(
@@ -524,7 +525,7 @@ class EnhancedScanner(Scanner):
 
     @staticmethod
     def _check_privilege_escalation(content: str) -> list[Finding]:
-        """권한 상승 시도 문구 탐지."""
+        """Detect privilege escalation language."""
         for pattern in _PRIVILEGE_ESCALATION_PATTERNS:
             if pattern.search(content):
                 return [Finding(
@@ -537,7 +538,7 @@ class EnhancedScanner(Scanner):
 
     @staticmethod
     def _check_credential_harvest(content: str) -> list[Finding]:
-        """인증 정보 수집 시도 탐지."""
+        """Detect credential harvesting attempts."""
         for pattern in _CREDENTIAL_HARVEST_PATTERNS:
             if pattern.search(content):
                 return [Finding(
@@ -550,7 +551,7 @@ class EnhancedScanner(Scanner):
 
     @staticmethod
     def _check_webhook_exfil(content: str) -> list[Finding]:
-        """Webhook 기반 데이터 유출 탐지."""
+        """Detect webhook-based data exfiltration."""
         results: list[Finding] = []
         for pattern in _WEBHOOK_EXFIL_PATTERNS:
             for match in pattern.finditer(content):
@@ -567,7 +568,7 @@ class EnhancedScanner(Scanner):
 
     @staticmethod
     def _check_jwt_exposure(content: str) -> list[Finding]:
-        """JWT 토큰 노출 탐지."""
+        """Detect exposed JWT tokens."""
         if _JWT_RE.search(content):
             return [Finding(
                 pattern_id="jwt_exposure",
@@ -579,7 +580,7 @@ class EnhancedScanner(Scanner):
 
     @staticmethod
     def _check_internal_ip_reference(content: str) -> list[Finding]:
-        """내부 IP로의 URL 접근 탐지 (RFC 1918 IP가 URL에 포함된 경우만)."""
+        """Detect URLs that target RFC 1918 internal IP ranges."""
         matches = _INTERNAL_IP_URL_RE.findall(content)
         if matches:
             return [Finding(
@@ -592,7 +593,7 @@ class EnhancedScanner(Scanner):
 
     @staticmethod
     def _check_log_injection(content: str) -> list[Finding]:
-        """로그 인젝션/위조 패턴 탐지."""
+        """Detect log injection or log forging patterns."""
         for pattern in _LOG_INJECTION_PATTERNS:
             if pattern.search(content):
                 return [Finding(
@@ -605,7 +606,7 @@ class EnhancedScanner(Scanner):
 
     @staticmethod
     def _check_discord_webhook_exfil(content: str) -> list[Finding]:
-        """Discord webhook을 통한 데이터 유출 탐지."""
+        """Detect Discord webhook usage for data exfiltration."""
         for match in _DISCORD_WEBHOOK_RE.finditer(content):
             if not _has_sensitive_exfil_context(content, match.start(), match.end()):
                 continue
@@ -619,7 +620,7 @@ class EnhancedScanner(Scanner):
 
     @staticmethod
     def _check_telegram_bot_exfil(content: str) -> list[Finding]:
-        """Telegram bot API를 통한 데이터 유출 탐지."""
+        """Detect Telegram bot API usage for data exfiltration."""
         for match in _TELEGRAM_BOT_RE.finditer(content):
             if not _has_sensitive_exfil_context(content, match.start(), match.end()):
                 continue
@@ -633,7 +634,7 @@ class EnhancedScanner(Scanner):
 
     @staticmethod
     def _check_pastebin_gist_exfil(content: str) -> list[Finding]:
-        """Pastebin/Gist 서비스를 통한 데이터 유출 탐지."""
+        """Detect Pastebin or Gist usage for data exfiltration."""
         for match in _PASTEBIN_GIST_RE.finditer(content):
             if not _has_sensitive_exfil_context(content, match.start(), match.end()):
                 continue
@@ -647,7 +648,7 @@ class EnhancedScanner(Scanner):
 
     @staticmethod
     def _check_cloud_upload_exfil(content: str) -> list[Finding]:
-        """클라우드 스토리지 업로드를 통한 데이터 유출 탐지."""
+        """Detect cloud upload endpoints used for exfiltration."""
         for match in _CLOUD_UPLOAD_RE.finditer(content):
             if not _has_sensitive_exfil_context(content, match.start(), match.end()):
                 continue
@@ -661,7 +662,7 @@ class EnhancedScanner(Scanner):
 
     @staticmethod
     def _check_presigned_url_exfil(content: str) -> list[Finding]:
-        """Presigned URL을 통한 데이터 유출 탐지 (S3/GCS/Azure)."""
+        """Detect presigned cloud storage URLs used for exfiltration."""
         for match in _PRESIGNED_URL_RE.finditer(content):
             if not _has_presigned_exfil_context(content, match.start(), match.end()):
                 continue
@@ -675,7 +676,7 @@ class EnhancedScanner(Scanner):
 
     @staticmethod
     def _check_mixed_encoding(content: str) -> list[Finding]:
-        """혼합 인코딩 페이로드 탐지."""
+        """Detect mixed-encoding payloads."""
         for pattern in _MIXED_ENCODING_PATTERNS:
             if pattern.search(content):
                 return [Finding(
@@ -688,7 +689,7 @@ class EnhancedScanner(Scanner):
 
     @staticmethod
     def _check_credential_bundle(content: str) -> list[Finding]:
-        """인증 정보 묶음 노출 탐지 (username+password, AWS key pair)."""
+        """Detect exposed credential bundles such as user/pass or AWS pairs."""
         if _CREDENTIAL_BUNDLE_RE.search(content):
             return [Finding(
                 pattern_id="credential_bundle_dump",
@@ -700,7 +701,7 @@ class EnhancedScanner(Scanner):
 
     @staticmethod
     def _check_secret_file_ref(content: str) -> list[Finding]:
-        """시크릿 파일 참조 탐지 (.env, .ssh, kubeconfig, AWS credentials)."""
+        """Detect references to secret-bearing files."""
         for pattern in _SECRET_FILE_REF_PATTERNS:
             if pattern.search(content):
                 return [Finding(
@@ -713,7 +714,7 @@ class EnhancedScanner(Scanner):
 
     @staticmethod
     def _check_consent_bypass(content: str) -> list[Finding]:
-        """동의/승인 우회 사회공학 문구 탐지."""
+        """Detect consent or approval bypass social-engineering language."""
         for pattern in _CONSENT_BYPASS_PATTERNS:
             if pattern.search(content):
                 return [Finding(
@@ -726,7 +727,7 @@ class EnhancedScanner(Scanner):
 
     @staticmethod
     def _check_bulk_archive(content: str) -> list[Finding]:
-        """대량 아카이브/내보내기 시도 탐지."""
+        """Detect bulk archive or full-data export attempts."""
         for pattern in _BULK_ARCHIVE_PATTERNS:
             match = pattern.search(content)
             if match and _has_risky_bulk_archive_context(content, match.start(), match.end()):

@@ -1,4 +1,4 @@
-"""확장 스캐너 (32종 패턴) 테스트."""
+"""Tests for the extended scanner with 32 patterns."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ def scanner():
     return EnhancedScanner()
 
 
-# ── SDK 기본 패턴이 여전히 동작하는지 ──────────────────────────
+# ── SDK baseline patterns still work ─────────────────────────
 
 
 class TestBasePatterns:
@@ -27,7 +27,7 @@ class TestBasePatterns:
         assert "suspicious_url" in ids
 
 
-# ── SQL Injection (인젝션 지표 필수) ──────────────────────────
+# ── SQL Injection (requires injection indicators) ────────────
 
 
 class TestSQLInjection:
@@ -52,7 +52,7 @@ class TestSQLInjection:
         assert "sql_injection" in ids
 
     def test_normal_dml_no_false_positive(self, scanner):
-        """정상 DML은 탐지하지 않음."""
+        """Do not detect benign DML."""
         result = scanner.scan("DELETE FROM logs WHERE id = 1", source_type="text")
         ids = [f.pattern_id for f in result.findings]
         assert "sql_injection" not in ids
@@ -68,7 +68,7 @@ class TestSQLInjection:
         assert "sql_injection" not in ids
 
 
-# ── NoSQL Injection (JSON 문맥 필수) ─────────────────────────
+# ── NoSQL Injection (requires JSON context) ──────────────────
 
 
 class TestNoSQLInjection:
@@ -83,7 +83,7 @@ class TestNoSQLInjection:
         assert "nosql_injection" in ids
 
     def test_documentation_no_false_positive(self, scanner):
-        """문서에서 $gt를 설명하는 것은 탐지하지 않음."""
+        """Do not detect documentation that merely explains $gt."""
         result = scanner.scan("Mongo operators include $gt, $ne, and $exists", source_type="text")
         ids = [f.pattern_id for f in result.findings]
         assert "nosql_injection" not in ids
@@ -205,7 +205,7 @@ class TestJWTExposure:
         assert "jwt_exposure" in ids
 
 
-# ── Internal IP Reference (URL 문맥만) ────────────────────────
+# ── Internal IP Reference (URL context only) ─────────────────
 
 
 class TestInternalIPReference:
@@ -215,13 +215,13 @@ class TestInternalIPReference:
         assert "internal_ip_reference" in ids
 
     def test_plain_ip_no_alert(self, scanner):
-        """URL이 아닌 IP 주소 언급은 탐지하지 않음."""
+        """Do not detect IP mentions that are not URLs."""
         result = scanner.scan("Private ranges are 10.0.0.0/8 and 192.168.0.0/16", source_type="text")
         ids = [f.pattern_id for f in result.findings]
         assert "internal_ip_reference" not in ids
 
     def test_single_mention_no_alert(self, scanner):
-        """IP 단독 언급은 탐지하지 않음."""
+        """Do not detect standalone IP mentions."""
         result = scanner.scan("server at 10.0.1.5", source_type="text")
         ids = [f.pattern_id for f in result.findings]
         assert "internal_ip_reference" not in ids
@@ -242,7 +242,7 @@ class TestLogInjection:
         assert "log_injection" in ids
 
 
-# ── 신규 Exfil / Payload 패턴 ────────────────────────────────
+# ── New exfiltration and payload patterns ────────────────────
 
 
 class TestDiscordWebhookExfil:
@@ -427,20 +427,20 @@ class TestBenignDocsNoFalsePositive:
         assert "sql_injection" not in ids
 
 
-# ── 통합: 패턴 개수 확인 ────────────────────────────────────
+# ── Integration: verify pattern count ────────────────────────
 
 
 class TestPatternCount:
     def test_all_patterns_available(self, scanner):
-        """32종 패턴 ID 목록 확인."""
+        """Verify the list of 32 pattern IDs."""
         all_pattern_ids = {
-            # SDK 기본 11종
+            # 11 SDK baseline patterns
             "css_hidden_text", "html_comment_injection", "metadata_injection",
             "markdown_link_payload", "prompt_injection_keywords",
             "base64_encoded_instruction", "invisible_unicode",
             "role_override_attempt", "suspicious_url",
             "data_exfil_phrase", "encoded_bypass",
-            # API 프리미엄 21종
+            # 21 API extension patterns
             "sql_injection", "nosql_injection", "command_injection",
             "path_traversal", "ssrf_attempt",
             "privilege_escalation", "credential_harvest",
@@ -455,7 +455,7 @@ class TestPatternCount:
         assert len(all_pattern_ids) == 32
 
     def test_score_capped_at_1(self, scanner):
-        """여러 패턴이 동시에 탐지되어도 score는 1.0 이하."""
+        """Even with multiple matches, the score should stay at or below 1.0."""
         nasty = (
             "DROP TABLE users; "
             "ignore previous instructions "

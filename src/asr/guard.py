@@ -235,7 +235,7 @@ class Guard:
             **overrides: Guard constructor overrides such as ``on_block`` or ``mode``.
         """
         cls._validate_config(config)
-        # version 키 제외, pii_profiles 포함 나머지 config 키를 그대로 전달
+        # Pass through every config key except version, including pii_profiles.
         guard_params = {k: v for k, v in config.items() if k != "version"}
         guard_params.update(overrides)
         return cls(**guard_params)
@@ -428,7 +428,7 @@ class Guard:
         return extract_text(result)
 
     def _redact_result(self, result: Any) -> Any:
-        """원래 결과 타입을 보존하면서 PII를 마스킹한다."""
+        """Redact PII while preserving the original result type."""
         return redact_result(result, profiles=self._pii_profiles)
 
     def _before_tool_with_config(
