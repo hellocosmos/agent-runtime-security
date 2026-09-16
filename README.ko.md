@@ -1,5 +1,7 @@
 # Agent Runtime Security
 
+> **제품 방향 변경 (2026년 9월):** TrapDefense의 현재 제품은 TLS decryptor 뒤에 배치하는 프록시 기반 **AI Firewall for Agents**입니다. MIT Community 코드는 [hellocosmos/ai-firewall](https://github.com/hellocosmos/ai-firewall)에서 개발합니다. 이 저장소에는 이전 embedded SDK와 이력을 보존하며, 새 Community 배포에 SDK를 포함하지 않습니다. [전환 안내](https://github.com/hellocosmos/ai-firewall/blob/main/docs/migration.md).
+
 [English](./README.md) | [한국어](./README.ko.md)
 
 > 권한 있는 AI 에이전트의 도구 실행을 통제하고 증빙을 남기는 오픈소스 런타임 보안 SDK입니다.

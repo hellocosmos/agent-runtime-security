@@ -1,5 +1,7 @@
 # Agent Runtime Security
 
+> **Product direction (September 2026):** TrapDefense now develops its proxy-based **AI Firewall for Agents** at [hellocosmos/ai-firewall](https://github.com/hellocosmos/ai-firewall). That repository contains the MIT Community product for deployment behind a TLS decryptor. This repository preserves the earlier embedded SDK and its history; it is not included in the new Community distribution. [Migration guide](https://github.com/hellocosmos/ai-firewall/blob/main/docs/migration.md).
+
 [![Test](https://github.com/hellocosmos/agent-runtime-security/actions/workflows/test.yml/badge.svg)](https://github.com/hellocosmos/agent-runtime-security/actions/workflows/test.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
